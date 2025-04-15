@@ -160,6 +160,8 @@ class SimplexNoise {
 // Modified Game class to use ChunkManager
 let gameInstance = null;
 
+// Only define Game class if it hasn't been defined already
+if (typeof Game === 'undefined') {
 class Game {
     constructor(worldData, settings) {
         // Default settings in case settings is undefined or incomplete
@@ -400,7 +402,17 @@ class Game {
                 }
                 
                 // Initialize player controller after loading is complete
-                this.initPlayerController();
+                try {
+                    if (typeof this.initPlayerController === 'function') {
+                        this.initPlayerController();
+                    } else {
+                        console.log("Creating new PlayerController instance");
+                        new PlayerController(this);
+                    }
+                } catch (error) {
+                    console.error("Error initializing player controller:", error);
+                    console.error("Stack trace:", error.stack);
+                }
             } else {
                 console.error("Could not hide loading screen: DOM elements not found");
                 console.log("loadingScreen element:", loadingScreen);
@@ -458,8 +470,10 @@ class Game {
     // Rest of the Game class methods...
     // (createBlockMaterial, createFpsCounter, createCrosshair, createPauseMenu, etc.)
 }
+} // End of if (typeof Game === 'undefined') block
 
-// Initialize game when world is created
+// Initialize game when world is created - only if not already defined
+if (typeof initGame === 'undefined') {
 function initGame(worldData, settings) {
     try {
         console.log("Initializing game with world data:", worldData);

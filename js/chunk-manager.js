@@ -126,22 +126,49 @@ class ChunkManager {
                 // Add a small delay before hiding loading screen to ensure everything is rendered
                 console.log("Preparing to hide loading screen...");
                 setTimeout(() => {
-                    // Hide loading screen when done
-                    if (this.game && this.game.hideLoadingScreen) {
-                        console.log("Hiding loading screen now");
-                        this.game.hideLoadingScreen();
-                    } else {
-                        console.error("Cannot hide loading screen: hideLoadingScreen method not found");
-                        // Fallback method to hide loading screen
+                    try {
+                        // Hide loading screen when done
+                        if (this.game && typeof this.game.hideLoadingScreen === 'function') {
+                            console.log("Hiding loading screen now using game.hideLoadingScreen()");
+                            this.game.hideLoadingScreen();
+                        } else {
+                            console.error("Cannot hide loading screen: hideLoadingScreen method not found or not a function");
+                            // Fallback method to hide loading screen
+                            const loadingScreen = document.getElementById('loading-screen');
+                            const gameCanvas = document.getElementById('game-canvas');
+                            if (loadingScreen && gameCanvas) {
+                                console.log("Using fallback method to hide loading screen");
+                                loadingScreen.classList.remove('active');
+                                gameCanvas.style.display = 'block';
+                                
+                                // Force scene render if possible
+                                if (this.game && this.game.scene && this.game.engine) {
+                                    console.log("Forcing scene render from fallback");
+                                    this.game.scene.render();
+                                    this.game.engine.resize();
+                                }
+                                
+                                // Initialize player controller if possible
+                                if (this.game && typeof window.PlayerController === 'function') {
+                                    console.log("Creating PlayerController from fallback");
+                                    new window.PlayerController(this.game);
+                                }
+                            }
+                        }
+                    } catch (error) {
+                        console.error("Error while hiding loading screen:", error);
+                        console.error("Stack trace:", error.stack);
+                        
+                        // Ultimate fallback
                         const loadingScreen = document.getElementById('loading-screen');
                         const gameCanvas = document.getElementById('game-canvas');
                         if (loadingScreen && gameCanvas) {
-                            console.log("Using fallback method to hide loading screen");
+                            console.log("Using ultimate fallback to hide loading screen after error");
                             loadingScreen.classList.remove('active');
                             gameCanvas.style.display = 'block';
                         }
                     }
-                }, 500);
+                }, 1000);
             }
         } catch (error) {
             console.error("Error in processChunkQueue:", error);
