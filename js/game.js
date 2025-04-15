@@ -49,11 +49,20 @@ class Game {
     }
 
     init() {
+        console.log("[Game] Initializing...");
         try {
-            console.log("Game initialization started");
+            console.log("[Game] Finding canvas element...");
+            this.canvas = document.getElementById('game-canvas');
+            console.log("[Game] Canvas element:", this.canvas);
+            if (!this.canvas) {
+                console.error("[Game] Canvas element 'game-canvas' not found!");
+                return; // Stop initialization if canvas is missing
+            }
+
+            console.log("[Game] Creating Babylon.js engine...");
             // Initialize Babylon.js engine
             this.engine = new BABYLON.Engine(this.canvas, this.settings.vsync, { preserveDrawingBuffer: true, stencil: true });
-            console.log("Babylon engine created successfully");
+            console.log("[Game] Engine created:", this.engine);
             
             // Set max framerate if not unlimited
             if (this.settings.maxFramerate > 0) {
@@ -62,20 +71,26 @@ class Game {
             }
             
             // Create scene
-            console.log("Creating scene...");
+            console.log("[Game] Creating scene...");
             this.createScene();
-            console.log("Scene created successfully");
+            console.log("[Game] Scene created successfully");
             
             // Register event handlers
-            console.log("Registering event handlers...");
+            console.log("[Game] Registering event handlers...");
             this.registerEventHandlers();
-            console.log("Event handlers registered");
+            console.log("[Game] Event handlers registered");
             
             // Start the render loop
-            console.log("Starting render loop...");
+            console.log("[Game] Starting render loop...");
             this.engine.runRenderLoop(() => {
+                // console.log("[Game] Render loop tick"); // Optional: Uncomment for very verbose logging
                 if (!this.isPaused) {
-                    this.scene.render();
+                    try {
+                        this.scene.render();
+                    } catch (renderError) {
+                        console.error("[Game] Error during scene.render():", renderError);
+                        this.engine.stopRenderLoop(); // Stop loop on error
+                    }
                     
                     // Update FPS counter if enabled
                     if (this.settings.fpsCounter && this.fpsCounter) {
@@ -86,21 +101,25 @@ class Game {
                     this.updateChunks();
                 }
             });
-            console.log("Render loop started");
+            console.log("[Game] Render loop started");
             
             // Handle window resize
             window.addEventListener('resize', () => {
-                this.engine.resize();
+                if (this.engine) {
+                    this.engine.resize();
+                }
             });
-            console.log("Window resize handler added");
+            console.log("[Game] Window resize handler added");
             
             // Initialize Babylon debugger if available
             if (window.babylonDebugger) {
                 window.babylonDebugger.initialize(this.scene);
-                console.log("Babylon debugger initialized");
+                console.log("[Game] Babylon debugger initialized");
             }
+            
+            console.log("[Game] Initialization complete.");
         } catch (error) {
-            console.error("Error during game initialization:", error);
+            console.error("[Game] Error during initialization:", error);
             console.error("Stack trace:", error.stack);
         }
     }
@@ -344,431 +363,503 @@ class Game {
     }
 
     generateInitialChunks() {
-        // Generate chunks around player
-        const playerChunkX = Math.floor(this.camera.position.x / this.chunkSize);
-        const playerChunkZ = Math.floor(this.camera.position.z / this.chunkSize);
-        
-        // Generate chunks within render distance
-        for (let x = playerChunkX - this.settings.renderDistance; x <= playerChunkX + this.settings.renderDistance; x++) {
-            for (let z = playerChunkZ - this.settings.renderDistance; z <= playerChunkZ + this.settings.renderDistance; z++) {
-                this.generateChunk(x, z);
+        try {
+            console.log("Starting initial chunk generation with progressive loading");
+            
+            // Generate chunks around player
+            const playerChunkX = Math.floor(this.camera.position.x / this.chunkSize);
+            const playerChunkZ = Math.floor(this.camera.position.z / this.chunkSize);
+            console.log(`Player position: ${this.camera.position.x}, ${this.camera.position.y}, ${this.camera.position.z}`);
+            console.log(`Player chunk: ${playerChunkX}, ${playerChunkZ}`);
+            console.log(`Render distance: ${this.renderDistance}, Chunk size: ${this.chunkSize}`);
+            
+            // Generate chunks within render distance
+            let chunksGenerated = 0;
+            for (let x = playerChunkX - this.settings.renderDistance; x <= playerChunkX + this.settings.renderDistance; x++) {
+                for (let z = playerChunkZ - this.settings.renderDistance; z <= playerChunkZ + this.settings.renderDistance; z++) {
+                    console.log(`Generating chunk at ${x}, ${z}`);
+                    this.generateChunk(x, z);
+                    chunksGenerated++;
+                }
             }
+            console.log(`Generated ${chunksGenerated} initial chunks`);
+            
+            // Position player above the terrain
+            const playerX = 0;
+            const playerZ = 0;
+            const height = this.terrainGenerator.getHeightAt(playerX, playerZ);
+            console.log(`Terrain height at player position: ${height}`);
+            this.camera.position = new BABYLON.Vector3(playerX, height + this.playerHeight + 1, playerZ);
+            console.log(`Final player position: ${this.camera.position.x}, ${this.camera.position.y}, ${this.camera.position.z}`);
+        } catch (error) {
+            console.error("Error during initial chunk generation:", error);
+            console.error("Stack trace:", error.stack);
         }
-        
-        // Position player above the terrain
-        const playerX = 0;
-        const playerZ = 0;
-        const height = this.terrainGenerator.getHeightAt(playerX, playerZ);
-        this.camera.position = new BABYLON.Vector3(playerX, height + this.playerHeight + 1, playerZ);
     }
 
     updateChunks() {
-        // Get current player chunk
-        const playerChunkX = Math.floor(this.camera.position.x / this.chunkSize);
-        const playerChunkZ = Math.floor(this.camera.position.z / this.chunkSize);
-        
-        // Check which chunks need to be loaded or unloaded
-        const chunksToLoad = new Set();
-        const chunksToUnload = new Set(this.loadedChunks);
-        
-        // Determine chunks to load
-        for (let x = playerChunkX - this.settings.renderDistance; x <= playerChunkX + this.settings.renderDistance; x++) {
-            for (let z = playerChunkZ - this.settings.renderDistance; z <= playerChunkZ + this.settings.renderDistance; z++) {
-                const chunkKey = `${x},${z}`;
-                chunksToLoad.add(chunkKey);
-                chunksToUnload.delete(chunkKey);
+        try {
+            // Get current player chunk
+            const playerChunkX = Math.floor(this.camera.position.x / this.chunkSize);
+            const playerChunkZ = Math.floor(this.camera.position.z / this.chunkSize);
+            
+            // Check which chunks need to be loaded or unloaded
+            const chunksToLoad = new Set();
+            const chunksToUnload = new Set(this.loadedChunks);
+            
+            // Determine chunks to load
+            for (let x = playerChunkX - this.settings.renderDistance; x <= playerChunkX + this.settings.renderDistance; x++) {
+                for (let z = playerChunkZ - this.settings.renderDistance; z <= playerChunkZ + this.settings.renderDistance; z++) {
+                    const chunkKey = `${x},${z}`;
+                    chunksToLoad.add(chunkKey);
+                    chunksToUnload.delete(chunkKey);
+                }
             }
+            
+            // Load new chunks
+            chunksToLoad.forEach(chunkKey => {
+                if (!this.loadedChunks.has(chunkKey)) {
+                    console.log(`Loading new chunk: ${chunkKey}`);
+                    const [x, z] = chunkKey.split(',').map(Number);
+                    this.generateChunk(x, z);
+                    this.loadedChunks.add(chunkKey);
+                }
+            });
+            
+            // Unload distant chunks
+            chunksToUnload.forEach(chunkKey => {
+                console.log(`Unloading distant chunk: ${chunkKey}`);
+                this.unloadChunk(chunkKey);
+                this.loadedChunks.delete(chunkKey);
+            });
+        } catch (error) {
+            console.error("Error during chunk update:", error);
+            console.error("Stack trace:", error.stack);
         }
-        
-        // Load new chunks
-        chunksToLoad.forEach(chunkKey => {
-            if (!this.loadedChunks.has(chunkKey)) {
-                const [x, z] = chunkKey.split(',').map(Number);
-                this.generateChunk(x, z);
-                this.loadedChunks.add(chunkKey);
-            }
-        });
-        
-        // Unload distant chunks
-        chunksToUnload.forEach(chunkKey => {
-            this.unloadChunk(chunkKey);
-            this.loadedChunks.delete(chunkKey);
-        });
     }
 
     generateChunk(chunkX, chunkZ) {
-        const chunkKey = `${chunkX},${chunkZ}`;
-        
-        // Skip if chunk already exists
-        if (this.chunks[chunkKey]) {
-            return;
+        try {
+            const chunkKey = `${chunkX},${chunkZ}`;
+            
+            // Skip if chunk already exists
+            if (this.chunks[chunkKey]) {
+                console.log(`Chunk ${chunkKey} already exists, skipping generation`);
+                return;
+            }
+            
+            console.log(`Generating chunk ${chunkKey}`);
+            
+            // Create chunk container
+            const chunk = {
+                x: chunkX,
+                z: chunkZ,
+                blocks: {},
+                mesh: null
+            };
+            
+            // Generate terrain for this chunk
+            console.log(`Generating terrain for chunk ${chunkKey}`);
+            this.generateTerrain(chunk);
+            
+            // Create mesh for this chunk
+            console.log(`Creating mesh for chunk ${chunkKey}`);
+            this.createChunkMesh(chunk);
+            
+            // Store chunk
+            this.chunks[chunkKey] = chunk;
+            this.loadedChunks.add(chunkKey);
+            
+            console.log(`Chunk ${chunkKey} generation complete`);
+        } catch (error) {
+            console.error(`Error generating chunk at ${chunkX}, ${chunkZ}:`, error);
+            console.error("Stack trace:", error.stack);
         }
+    }
+
+    generateTerrain(chunk) {
+        // Generate terrain using SimplexNoise
+        const startX = chunk.x * this.chunkSize;
+        const startZ = chunk.z * this.chunkSize;
         
-        // Create chunk container
-        this.chunks[chunkKey] = {
-            blocks: {},
-            meshes: []
-        };
-        
-        // Generate terrain for this chunk
-        const worldX = chunkX * this.chunkSize;
-        const worldZ = chunkZ * this.chunkSize;
-        
-        // Create blocks for this chunk
         for (let x = 0; x < this.chunkSize; x++) {
             for (let z = 0; z < this.chunkSize; z++) {
-                const blockX = worldX + x;
-                const blockZ = worldZ + z;
+                const worldX = startX + x;
+                const worldZ = startZ + z;
                 
-                // Get height from terrain generator
-                const height = this.terrainGenerator.getHeightAt(blockX, blockZ);
+                // Get height at this position
+                const height = this.terrainGenerator.getHeightAt(worldX, worldZ);
                 
-                // Create surface block
-                this.createBlock(blockX, height, blockZ, chunkKey);
-                
-                // Add some blocks below the surface
-                for (let y = height - 1; y > height - 3; y--) {
-                    if (Math.random() > 0.3) { // 70% chance to create a block
-                        this.createBlock(blockX, y, blockZ, chunkKey);
-                    }
+                // Create blocks from bedrock to surface
+                for (let y = 0; y < height; y++) {
+                    const blockKey = `${x},${y},${z}`;
+                    chunk.blocks[blockKey] = {
+                        x: x,
+                        y: y,
+                        z: z,
+                        type: y === Math.floor(height) - 1 ? 'grass' : (y > height - 4 ? 'dirt' : 'stone')
+                    };
                 }
             }
         }
-        
-        // Optimize chunk by merging blocks
-        this.optimizeChunk(chunkKey);
     }
 
-    optimizeChunk(chunkKey) {
-        // This is a simplified optimization
-        // In a real implementation, you would merge adjacent blocks with the same material
-        // For now, we'll just create a single merged mesh for the chunk
+    createChunkMesh(chunk) {
+        // Create merged mesh for all blocks in chunk
+        const positions = [];
+        const indices = [];
+        const uvs = [];
         
-        const chunk = this.chunks[chunkKey];
-        const blockKeys = Object.keys(chunk.blocks);
+        let indexOffset = 0;
         
-        if (blockKeys.length === 0) {
-            return;
+        // Add each block to the mesh
+        Object.values(chunk.blocks).forEach(block => {
+            const x = block.x;
+            const y = block.y;
+            const z = block.z;
+            
+            // Only create faces for visible blocks (not surrounded by other blocks)
+            const blockKey = `${x},${y},${z}`;
+            const topKey = `${x},${y+1},${z}`;
+            const bottomKey = `${x},${y-1},${z}`;
+            const leftKey = `${x-1},${y},${z}`;
+            const rightKey = `${x+1},${y},${z}`;
+            const frontKey = `${x},${y},${z+1}`;
+            const backKey = `${x},${y},${z-1}`;
+            
+            const hasTop = chunk.blocks[topKey] !== undefined;
+            const hasBottom = chunk.blocks[bottomKey] !== undefined;
+            const hasLeft = chunk.blocks[leftKey] !== undefined;
+            const hasRight = chunk.blocks[rightKey] !== undefined;
+            const hasFront = chunk.blocks[frontKey] !== undefined;
+            const hasBack = chunk.blocks[backKey] !== undefined;
+            
+            // Only add faces that are visible
+            if (!hasTop) this.addBlockFace('top', x, y, z, positions, indices, uvs, indexOffset);
+            if (!hasBottom) this.addBlockFace('bottom', x, y, z, positions, indices, uvs, indexOffset);
+            if (!hasLeft) this.addBlockFace('left', x, y, z, positions, indices, uvs, indexOffset);
+            if (!hasRight) this.addBlockFace('right', x, y, z, positions, indices, uvs, indexOffset);
+            if (!hasFront) this.addBlockFace('front', x, y, z, positions, indices, uvs, indexOffset);
+            if (!hasBack) this.addBlockFace('back', x, y, z, positions, indices, uvs, indexOffset);
+            
+            // Update index offset
+            indexOffset = positions.length / 3;
+        });
+        
+        // Create mesh if there are any vertices
+        if (positions.length > 0) {
+            // Create vertex data
+            const vertexData = new BABYLON.VertexData();
+            vertexData.positions = positions;
+            vertexData.indices = indices;
+            vertexData.uvs = uvs;
+            
+            // Calculate normals
+            BABYLON.VertexData.ComputeNormals(positions, indices, vertexData.normals);
+            
+            // Create mesh
+            const worldX = chunk.x * this.chunkSize;
+            const worldZ = chunk.z * this.chunkSize;
+            chunk.mesh = new BABYLON.Mesh(`chunk_${chunk.x}_${chunk.z}`, this.scene);
+            chunk.mesh.position = new BABYLON.Vector3(worldX, 0, worldZ);
+            
+            // Apply vertex data
+            vertexData.applyToMesh(chunk.mesh);
+            
+            // Apply material
+            chunk.mesh.material = this.blockMaterial;
+            
+            // Enable collisions
+            chunk.mesh.checkCollisions = true;
+        }
+    }
+
+    addBlockFace(face, x, y, z, positions, indices, uvs, indexOffset) {
+        const size = this.blockSize / 2;
+        const worldX = x * this.blockSize;
+        const worldY = y * this.blockSize;
+        const worldZ = z * this.blockSize;
+        
+        // Define vertices for each face
+        let faceVertices = [];
+        let faceIndices = [];
+        let faceUVs = [];
+        
+        switch(face) {
+            case 'top':
+                faceVertices = [
+                    worldX - size, worldY + size, worldZ - size,
+                    worldX + size, worldY + size, worldZ - size,
+                    worldX + size, worldY + size, worldZ + size,
+                    worldX - size, worldY + size, worldZ + size
+                ];
+                faceUVs = [0, 0, 1, 0, 1, 1, 0, 1];
+                break;
+            case 'bottom':
+                faceVertices = [
+                    worldX - size, worldY - size, worldZ - size,
+                    worldX - size, worldY - size, worldZ + size,
+                    worldX + size, worldY - size, worldZ + size,
+                    worldX + size, worldY - size, worldZ - size
+                ];
+                faceUVs = [0, 0, 1, 0, 1, 1, 0, 1];
+                break;
+            case 'left':
+                faceVertices = [
+                    worldX - size, worldY - size, worldZ - size,
+                    worldX - size, worldY - size, worldZ + size,
+                    worldX - size, worldY + size, worldZ + size,
+                    worldX - size, worldY + size, worldZ - size
+                ];
+                faceUVs = [0, 0, 1, 0, 1, 1, 0, 1];
+                break;
+            case 'right':
+                faceVertices = [
+                    worldX + size, worldY - size, worldZ - size,
+                    worldX + size, worldY + size, worldZ - size,
+                    worldX + size, worldY + size, worldZ + size,
+                    worldX + size, worldY - size, worldZ + size
+                ];
+                faceUVs = [0, 0, 1, 0, 1, 1, 0, 1];
+                break;
+            case 'front':
+                faceVertices = [
+                    worldX - size, worldY - size, worldZ + size,
+                    worldX + size, worldY - size, worldZ + size,
+                    worldX + size, worldY + size, worldZ + size,
+                    worldX - size, worldY + size, worldZ + size
+                ];
+                faceUVs = [0, 0, 1, 0, 1, 1, 0, 1];
+                break;
+            case 'back':
+                faceVertices = [
+                    worldX - size, worldY - size, worldZ - size,
+                    worldX - size, worldY + size, worldZ - size,
+                    worldX + size, worldY + size, worldZ - size,
+                    worldX + size, worldY - size, worldZ - size
+                ];
+                faceUVs = [0, 0, 1, 0, 1, 1, 0, 1];
+                break;
         }
         
-        // Create merged mesh
-        const mergedMesh = BABYLON.Mesh.MergeMeshes(
-            Object.values(chunk.blocks).map(block => block.mesh),
-            true,
-            true,
-            undefined,
-            false,
-            true
+        // Add vertices to positions array
+        positions.push(...faceVertices);
+        
+        // Add indices (two triangles per face)
+        indices.push(
+            indexOffset, indexOffset + 1, indexOffset + 2,
+            indexOffset, indexOffset + 2, indexOffset + 3
         );
         
-        if (mergedMesh) {
-            mergedMesh.name = `chunk_${chunkKey}`;
-            mergedMesh.checkCollisions = true;
-            chunk.meshes.push(mergedMesh);
-        }
+        // Add UVs
+        uvs.push(...faceUVs);
     }
 
     unloadChunk(chunkKey) {
         const chunk = this.chunks[chunkKey];
-        if (!chunk) return;
-        
-        // Dispose all meshes in the chunk
-        chunk.meshes.forEach(mesh => {
-            if (mesh) {
-                mesh.dispose();
-            }
-        });
-        
-        // Remove chunk from memory
+        if (chunk && chunk.mesh) {
+            chunk.mesh.dispose();
+        }
         delete this.chunks[chunkKey];
     }
 
-    createBlock(x, y, z, chunkKey = null) {
-        // Create a unique key for this block position
-        const blockKey = `${x},${y},${z}`;
-        
-        // Check if block already exists at this position
-        if (this.blocks[blockKey]) {
-            return this.blocks[blockKey];
-        }
-        
-        // Create block mesh
-        const block = BABYLON.MeshBuilder.CreateBox(`block_${blockKey}`, { size: this.blockSize }, this.scene);
-        block.position = new BABYLON.Vector3(x, y, z);
-        block.material = this.blockMaterial;
-        block.checkCollisions = true;
-        
-        // Store block in blocks object
-        const blockData = {
-            mesh: block,
-            position: { x, y, z }
-        };
-        
-        this.blocks[blockKey] = blockData;
-        
-        // If this block belongs to a chunk, add it to the chunk
-        if (chunkKey && this.chunks[chunkKey]) {
-            this.chunks[chunkKey].blocks[blockKey] = blockData;
-        }
-        
-        return blockData;
-    }
-
-    removeBlock(x, y, z) {
-        const blockKey = `${x},${y},${z}`;
-        
-        if (this.blocks[blockKey]) {
-            // Get the block's mesh
-            const block = this.blocks[blockKey];
-            
-            // Dispose the mesh
-            if (block.mesh) {
-                block.mesh.dispose();
-            }
-            
-            // Remove from blocks object
-            delete this.blocks[blockKey];
-            
-            // Find and remove from chunk if it exists
-            const chunkX = Math.floor(x / this.chunkSize);
-            const chunkZ = Math.floor(z / this.chunkSize);
-            const chunkKey = `${chunkX},${chunkZ}`;
-            
-            if (this.chunks[chunkKey] && this.chunks[chunkKey].blocks[blockKey]) {
-                delete this.chunks[chunkKey].blocks[blockKey];
-            }
-            
-            return true;
-        }
-        
-        return false;
-    }
-
     registerEventHandlers() {
-        // Pointer lock change handler
-        const pointerLockChange = () => {
-            this.isPointerLocked = document.pointerLockElement === this.canvas;
-            
-            // If we lost pointer lock and not paused, pause the game
-            if (!this.isPointerLocked && !this.isPaused) {
-                this.togglePause();
-            }
-        };
+        // Handle keyboard input
+        this.scene.actionManager = new BABYLON.ActionManager(this.scene);
         
-        document.addEventListener('pointerlockchange', pointerLockChange, false);
+        // WASD movement
+        this.scene.actionManager.registerAction(
+            new BABYLON.ExecuteCodeAction(
+                {
+                    trigger: BABYLON.ActionManager.OnKeyDownTrigger,
+                    parameter: 'w'
+                },
+                () => { this.moveForward = true; }
+            )
+        );
         
-        // Click handler for canvas
+        this.scene.actionManager.registerAction(
+            new BABYLON.ExecuteCodeAction(
+                {
+                    trigger: BABYLON.ActionManager.OnKeyUpTrigger,
+                    parameter: 'w'
+                },
+                () => { this.moveForward = false; }
+            )
+        );
+        
+        this.scene.actionManager.registerAction(
+            new BABYLON.ExecuteCodeAction(
+                {
+                    trigger: BABYLON.ActionManager.OnKeyDownTrigger,
+                    parameter: 's'
+                },
+                () => { this.moveBackward = true; }
+            )
+        );
+        
+        this.scene.actionManager.registerAction(
+            new BABYLON.ExecuteCodeAction(
+                {
+                    trigger: BABYLON.ActionManager.OnKeyUpTrigger,
+                    parameter: 's'
+                },
+                () => { this.moveBackward = false; }
+            )
+        );
+        
+        this.scene.actionManager.registerAction(
+            new BABYLON.ExecuteCodeAction(
+                {
+                    trigger: BABYLON.ActionManager.OnKeyDownTrigger,
+                    parameter: 'a'
+                },
+                () => { this.moveLeft = true; }
+            )
+        );
+        
+        this.scene.actionManager.registerAction(
+            new BABYLON.ExecuteCodeAction(
+                {
+                    trigger: BABYLON.ActionManager.OnKeyUpTrigger,
+                    parameter: 'a'
+                },
+                () => { this.moveLeft = false; }
+            )
+        );
+        
+        this.scene.actionManager.registerAction(
+            new BABYLON.ExecuteCodeAction(
+                {
+                    trigger: BABYLON.ActionManager.OnKeyDownTrigger,
+                    parameter: 'd'
+                },
+                () => { this.moveRight = true; }
+            )
+        );
+        
+        this.scene.actionManager.registerAction(
+            new BABYLON.ExecuteCodeAction(
+                {
+                    trigger: BABYLON.ActionManager.OnKeyUpTrigger,
+                    parameter: 'd'
+                },
+                () => { this.moveRight = false; }
+            )
+        );
+        
+        // Jump with space
+        this.scene.actionManager.registerAction(
+            new BABYLON.ExecuteCodeAction(
+                {
+                    trigger: BABYLON.ActionManager.OnKeyDownTrigger,
+                    parameter: ' '
+                },
+                () => { this.jump = true; }
+            )
+        );
+        
+        this.scene.actionManager.registerAction(
+            new BABYLON.ExecuteCodeAction(
+                {
+                    trigger: BABYLON.ActionManager.OnKeyUpTrigger,
+                    parameter: ' '
+                },
+                () => { this.jump = false; }
+            )
+        );
+        
+        // Toggle pause menu with ESC
+        this.scene.actionManager.registerAction(
+            new BABYLON.ExecuteCodeAction(
+                {
+                    trigger: BABYLON.ActionManager.OnKeyDownTrigger,
+                    parameter: 'Escape'
+                },
+                () => { this.togglePause(); }
+            )
+        );
+        
+        // Place block with E
+        this.scene.actionManager.registerAction(
+            new BABYLON.ExecuteCodeAction(
+                {
+                    trigger: BABYLON.ActionManager.OnKeyDownTrigger,
+                    parameter: 'e'
+                },
+                () => { this.placeBlock(); }
+            )
+        );
+        
+        // Break block with Q
+        this.scene.actionManager.registerAction(
+            new BABYLON.ExecuteCodeAction(
+                {
+                    trigger: BABYLON.ActionManager.OnKeyDownTrigger,
+                    parameter: 'q'
+                },
+                () => { this.breakBlock(); }
+            )
+        );
+        
+        // Handle mouse click for block interaction
         this.canvas.addEventListener('click', () => {
-            if (!this.isPointerLocked && !this.isPaused) {
-                this.canvas.requestPointerLock();
+            if (!this.isPointerLocked) {
+                this.lockPointer();
             }
         });
         
-        // Key down handler
-        window.addEventListener('keydown', (event) => {
-            if (this.isPaused && event.code !== 'Escape') {
-                return; // Ignore most keypresses when paused
-            }
-            
-            switch (event.code) {
-                case 'KeyW':
-                    this.moveForward = true;
-                    break;
-                case 'KeyS':
-                    this.moveBackward = true;
-                    break;
-                case 'KeyA':
-                    this.moveLeft = true;
-                    break;
-                case 'KeyD':
-                    this.moveRight = true;
-                    break;
-                case 'Space':
-                    this.jump = true;
-                    break;
-                case 'KeyE':
-                    // Place block
-                    if (this.selectedBlockPosition) {
-                        const { position, normal } = this.selectedBlockPosition;
-                        const newX = Math.round(position.x + normal.x);
-                        const newY = Math.round(position.y + normal.y);
-                        const newZ = Math.round(position.z + normal.z);
-                        this.createBlock(newX, newY, newZ);
-                    }
-                    break;
-                case 'KeyQ':
-                    // Remove block
-                    if (this.selectedBlockPosition) {
-                        const { position } = this.selectedBlockPosition;
-                        const x = Math.round(position.x);
-                        const y = Math.round(position.y);
-                        const z = Math.round(position.z);
-                        this.removeBlock(x, y, z);
-                    }
-                    break;
-                case 'Escape':
-                    // Toggle pause menu
-                    this.togglePause();
-                    break;
-            }
-        });
-        
-        // Key up handler
-        window.addEventListener('keyup', (event) => {
-            switch (event.code) {
-                case 'KeyW':
-                    this.moveForward = false;
-                    break;
-                case 'KeyS':
-                    this.moveBackward = false;
-                    break;
-                case 'KeyA':
-                    this.moveLeft = false;
-                    break;
-                case 'KeyD':
-                    this.moveRight = false;
-                    break;
-                case 'Space':
-                    this.jump = false;
-                    break;
-            }
-        });
-        
-        // Register before render observer for player movement and block selection
+        // Update player movement
         this.scene.registerBeforeRender(() => {
-            if (!this.isPaused) {
-                // Handle player movement
-                this.handlePlayerMovement();
+            if (this.isPointerLocked && !this.isPaused) {
+                // Apply movement
+                const cameraDirection = this.camera.getDirection(BABYLON.Vector3.Forward());
+                const cameraSide = this.camera.getDirection(BABYLON.Vector3.Right());
                 
-                // Handle block selection
-                this.handleBlockSelection();
+                if (this.moveForward) {
+                    this.camera.position.addInPlace(cameraDirection.scale(this.playerSpeed));
+                }
+                if (this.moveBackward) {
+                    this.camera.position.subtractInPlace(cameraDirection.scale(this.playerSpeed));
+                }
+                if (this.moveLeft) {
+                    this.camera.position.subtractInPlace(cameraSide.scale(this.playerSpeed));
+                }
+                if (this.moveRight) {
+                    this.camera.position.addInPlace(cameraSide.scale(this.playerSpeed));
+                }
+                if (this.jump) {
+                    // Only jump if on ground
+                    const ray = new BABYLON.Ray(this.camera.position, new BABYLON.Vector3(0, -1, 0), 1.1);
+                    const hit = this.scene.pickWithRay(ray);
+                    if (hit.hit) {
+                        this.camera.cameraDirection.y += this.jumpForce;
+                    }
+                }
+                
+                // Update block highlight
+                this.updateBlockHighlight();
             }
         });
     }
 
-    togglePause() {
-        this.isPaused = !this.isPaused;
+    lockPointer() {
+        this.canvas.requestPointerLock = this.canvas.requestPointerLock || this.canvas.mozRequestPointerLock;
+        this.canvas.requestPointerLock();
         
-        if (this.isPaused) {
-            // Show pause menu
-            this.pauseMenu.isVisible = true;
-            
-            // Exit pointer lock
-            document.exitPointerLock();
+        document.addEventListener('pointerlockchange', this.pointerLockChanged.bind(this), false);
+        document.addEventListener('mozpointerlockchange', this.pointerLockChanged.bind(this), false);
+    }
+
+    pointerLockChanged() {
+        if (document.pointerLockElement === this.canvas || document.mozPointerLockElement === this.canvas) {
+            this.isPointerLocked = true;
         } else {
-            // Hide pause menu
-            this.pauseMenu.isVisible = false;
-            
-            // Request pointer lock
-            this.canvas.requestPointerLock();
+            this.isPointerLocked = false;
         }
     }
 
-    saveWorld() {
-        // In a real implementation, you would save the world state
-        // For now, we'll just show a notification
-        
-        const guiTexture = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI('NotificationUI');
-        
-        const notification = new BABYLON.GUI.TextBlock();
-        notification.text = "World Saved!";
-        notification.color = "white";
-        notification.fontSize = 24;
-        notification.outlineWidth = 1;
-        notification.outlineColor = "black";
-        
-        guiTexture.addControl(notification);
-        
-        // Remove notification after a delay
-        setTimeout(() => {
-            guiTexture.dispose();
-        }, 2000);
-    }
-
-    quitToMenu() {
-        // Save world state before quitting
-        this.saveWorld();
-        
-        // Reset game state
-        this.isPaused = false;
-        
-        // Show main menu
-        const mainMenu = document.getElementById('main-menu');
-        const gameCanvas = document.getElementById('game-canvas');
-        
-        mainMenu.classList.add('active');
-        gameCanvas.style.display = 'none';
-        
-        // Dispose game resources
-        this.dispose();
-    }
-
-    dispose() {
-        // Stop render loop
-        this.engine.stopRenderLoop();
-        
-        // Dispose scene
-        this.scene.dispose();
-        
-        // Reset game instance
-        gameInstance = null;
-        window.gameInstance = null;
-    }
-
-    handlePlayerMovement() {
-        if (!this.isPointerLocked) {
-            return;
-        }
-        
-        const cameraDirection = this.camera.getDirection(new BABYLON.Vector3(0, 0, 1));
-        cameraDirection.y = 0;
-        cameraDirection.normalize();
-        
-        const right = BABYLON.Vector3.Cross(cameraDirection, BABYLON.Vector3.Up());
-        
-        // Calculate movement direction
-        const moveDirection = BABYLON.Vector3.Zero();
-        
-        if (this.moveForward) {
-            moveDirection.addInPlace(cameraDirection.scale(this.playerSpeed));
-        }
-        
-        if (this.moveBackward) {
-            moveDirection.subtractInPlace(cameraDirection.scale(this.playerSpeed));
-        }
-        
-        if (this.moveRight) {
-            moveDirection.addInPlace(right.scale(this.playerSpeed));
-        }
-        
-        if (this.moveLeft) {
-            moveDirection.subtractInPlace(right.scale(this.playerSpeed));
-        }
-        
-        // Apply movement
-        if (moveDirection.length() > 0) {
-            this.camera.position.addInPlace(moveDirection);
-        }
-        
-        // Handle jumping
-        if (this.jump && this.isGrounded()) {
-            this.camera.cameraDirection.y += this.jumpForce;
-        }
-    }
-
-    isGrounded() {
-        // Check if player is on the ground
-        const origin = this.camera.position.clone();
-        const direction = new BABYLON.Vector3(0, -1, 0);
-        const length = this.playerHeight * 0.5 + 0.1;
-        
-        const ray = new BABYLON.Ray(origin, direction, length);
-        const hit = this.scene.pickWithRay(ray);
-        
-        return hit.hit;
-    }
-
-    handleBlockSelection() {
+    updateBlockHighlight() {
         // Cast ray from camera to find block under crosshair
         const ray = this.scene.createPickingRay(
             this.canvas.width / 2,
@@ -779,86 +870,232 @@ class Game {
         
         const hit = this.scene.pickWithRay(ray);
         
-        if (hit.hit && hit.pickedMesh && hit.pickedMesh.name.startsWith('block_')) {
-            // Show highlight mesh at selected block
-            this.selectedBlockPosition = {
-                position: hit.pickedMesh.position,
-                normal: hit.getNormal()
-            };
+        if (hit.hit && hit.pickedMesh) {
+            // Get hit position
+            const hitPosition = hit.pickedPoint;
             
-            this.highlightMesh.position = hit.pickedMesh.position;
+            // Get block position
+            const blockX = Math.floor(hitPosition.x);
+            const blockY = Math.floor(hitPosition.y);
+            const blockZ = Math.floor(hitPosition.z);
+            
+            // Update highlight position
+            this.highlightMesh.position = new BABYLON.Vector3(blockX + 0.5, blockY + 0.5, blockZ + 0.5);
             this.highlightMesh.isVisible = true;
+            
+            // Store selected block position
+            this.selectedBlockPosition = { x: blockX, y: blockY, z: blockZ };
         } else {
-            // Hide highlight mesh if no block selected
-            this.selectedBlockPosition = null;
             this.highlightMesh.isVisible = false;
+            this.selectedBlockPosition = null;
         }
     }
 
-    applySettings(settings) {
-        this.settings = settings;
-        
-        // Apply vsync setting
-        this.engine.setHardwareScalingLevel(1);
-        if (this.settings.maxFramerate > 0) {
-            this.engine.setHardwareScalingLevel(1 / (this.settings.maxFramerate / 60));
-        }
-        
-        // Apply camera sensitivity
-        this.camera.speed = 0.2 * (this.settings.mouseSensitivity / 5);
-        this.camera.angularSensibility = 1000 / this.settings.mouseSensitivity;
-        
-        // Apply render distance
-        this.renderDistance = this.settings.renderDistance;
-        this.updateChunks(); // Update chunks based on new render distance
-        
-        // Apply fog setting
-        if (this.settings.fog) {
-            this.scene.fogMode = BABYLON.Scene.FOGMODE_EXP;
-            this.scene.fogDensity = 0.01;
-            this.scene.fogColor = new BABYLON.Color3(0.8, 0.8, 0.8);
-        } else {
-            this.scene.fogMode = BABYLON.Scene.FOGMODE_NONE;
-        }
-        
-        // Apply FPS counter setting
-        if (this.settings.fpsCounter) {
-            if (!this.fpsCounter) {
-                this.createFpsCounter();
+    placeBlock() {
+        if (this.selectedBlockPosition) {
+            // Get normal vector from hit face
+            const ray = this.scene.createPickingRay(
+                this.canvas.width / 2,
+                this.canvas.height / 2,
+                BABYLON.Matrix.Identity(),
+                this.camera
+            );
+            
+            const hit = this.scene.pickWithRay(ray);
+            
+            if (hit.hit && hit.pickedMesh) {
+                // Get hit normal
+                const normal = hit.getNormal();
+                
+                // Calculate new block position
+                const newBlockX = Math.floor(this.selectedBlockPosition.x + normal.x);
+                const newBlockY = Math.floor(this.selectedBlockPosition.y + normal.y);
+                const newBlockZ = Math.floor(this.selectedBlockPosition.z + normal.z);
+                
+                // Check if new position is valid (not inside player)
+                const playerPos = this.camera.position;
+                const playerBlockX = Math.floor(playerPos.x);
+                const playerBlockY = Math.floor(playerPos.y);
+                const playerBlockZ = Math.floor(playerPos.z);
+                
+                if (newBlockX === playerBlockX && newBlockY === playerBlockY && newBlockZ === playerBlockZ) {
+                    return; // Don't place block inside player
+                }
+                
+                if (newBlockX === playerBlockX && newBlockY === playerBlockY + 1 && newBlockZ === playerBlockZ) {
+                    return; // Don't place block inside player's head
+                }
+                
+                // Get chunk coordinates
+                const chunkX = Math.floor(newBlockX / this.chunkSize);
+                const chunkZ = Math.floor(newBlockZ / this.chunkSize);
+                const chunkKey = `${chunkX},${chunkZ}`;
+                
+                // Get local block coordinates within chunk
+                const localX = ((newBlockX % this.chunkSize) + this.chunkSize) % this.chunkSize;
+                const localY = newBlockY;
+                const localZ = ((newBlockZ % this.chunkSize) + this.chunkSize) % this.chunkSize;
+                const blockKey = `${localX},${localY},${localZ}`;
+                
+                // Create or get chunk
+                if (!this.chunks[chunkKey]) {
+                    this.generateChunk(chunkX, chunkZ);
+                }
+                
+                const chunk = this.chunks[chunkKey];
+                
+                // Add block to chunk
+                chunk.blocks[blockKey] = {
+                    x: localX,
+                    y: localY,
+                    z: localZ,
+                    type: 'dirt'
+                };
+                
+                // Recreate chunk mesh
+                if (chunk.mesh) {
+                    chunk.mesh.dispose();
+                }
+                this.createChunkMesh(chunk);
             }
-        } else if (this.fpsCounter) {
-            this.fpsCounter.dispose();
-            this.fpsCounter = null;
         }
+    }
+
+    breakBlock() {
+        if (this.selectedBlockPosition) {
+            // Get chunk coordinates
+            const blockX = this.selectedBlockPosition.x;
+            const blockY = this.selectedBlockPosition.y;
+            const blockZ = this.selectedBlockPosition.z;
+            
+            const chunkX = Math.floor(blockX / this.chunkSize);
+            const chunkZ = Math.floor(blockZ / this.chunkSize);
+            const chunkKey = `${chunkX},${chunkZ}`;
+            
+            // Get local block coordinates within chunk
+            const localX = ((blockX % this.chunkSize) + this.chunkSize) % this.chunkSize;
+            const localY = blockY;
+            const localZ = ((blockZ % this.chunkSize) + this.chunkSize) % this.chunkSize;
+            const blockKey = `${localX},${localY},${localZ}`;
+            
+            // Get chunk
+            const chunk = this.chunks[chunkKey];
+            
+            if (chunk && chunk.blocks[blockKey]) {
+                // Remove block from chunk
+                delete chunk.blocks[blockKey];
+                
+                // Recreate chunk mesh
+                if (chunk.mesh) {
+                    chunk.mesh.dispose();
+                }
+                this.createChunkMesh(chunk);
+            }
+        }
+    }
+
+    togglePause() {
+        this.isPaused = !this.isPaused;
+        
+        if (this.isPaused) {
+            // Show pause menu
+            if (this.pauseMenu) {
+                this.pauseMenu.isVisible = true;
+            }
+            
+            // Unlock pointer
+            document.exitPointerLock = document.exitPointerLock || document.mozExitPointerLock;
+            document.exitPointerLock();
+        } else {
+            // Hide pause menu
+            if (this.pauseMenu) {
+                this.pauseMenu.isVisible = false;
+            }
+            
+            // Lock pointer
+            this.lockPointer();
+        }
+    }
+
+    saveWorld() {
+        // Save world data to localStorage
+        const worldData = {
+            name: this.worldData.name,
+            seed: this.seed,
+            size: this.worldData.size,
+            playerPosition: {
+                x: this.camera.position.x,
+                y: this.camera.position.y,
+                z: this.camera.position.z
+            }
+        };
+        
+        localStorage.setItem(`world_${this.worldData.name}`, JSON.stringify(worldData));
+        
+        // Show save notification
+        alert('World saved successfully!');
+    }
+
+    quitToMenu() {
+        // Save world before quitting
+        this.saveWorld();
+        
+        // Return to menu
+        showMenu('main-menu');
+        
+        // Dispose of game resources
+        this.dispose();
+    }
+
+    dispose() {
+        // Stop render loop
+        this.engine.stopRenderLoop();
+        
+        // Dispose of scene
+        this.scene.dispose();
+        
+        // Dispose of engine
+        this.engine.dispose();
+        
+        // Remove event listeners
+        document.removeEventListener('pointerlockchange', this.pointerLockChanged.bind(this));
+        document.removeEventListener('mozpointerlockchange', this.pointerLockChanged.bind(this));
+        
+        // Clear game instance
+        gameInstance = null;
     }
 }
 
-// Terrain Generator class
 class TerrainGenerator {
     constructor(seed, worldSize) {
         this.seed = seed;
         this.worldSize = worldSize;
-        this.noiseGenerator = new SimplexNoise(this.seed.toString());
+        this.noise = new SimplexNoise(seed.toString());
     }
     
     getHeightAt(x, z) {
-        // Generate height using simplex noise
-        const nx = x / this.worldSize;
-        const nz = z / this.worldSize;
+        // Normalize coordinates to 0-1 range
+        const nx = x / this.worldSize + 0.5;
+        const nz = z / this.worldSize + 0.5;
         
-        // Use multiple octaves of noise for more natural terrain
+        // Generate height using multiple octaves of noise
         let height = 0;
-        let amplitude = 10;
+        let amplitude = 1;
         let frequency = 1;
-        let persistence = 0.5;
+        let maxHeight = 0;
         
         for (let i = 0; i < 4; i++) {
-            height += this.noiseGenerator.noise2D(nx * frequency, nz * frequency) * amplitude;
-            amplitude *= persistence;
+            height += this.noise.noise2D(nx * frequency, nz * frequency) * amplitude;
+            maxHeight += amplitude;
+            amplitude *= 0.5;
             frequency *= 2;
         }
         
-        return Math.floor(height);
+        // Normalize height to 0-1 range
+        height = (height + maxHeight) / (maxHeight * 2);
+        
+        // Scale height to desired range (1-20 blocks)
+        return Math.floor(height * 19) + 1;
     }
 }
 
@@ -869,38 +1106,32 @@ class SimplexNoise {
         this.perm = new Uint8Array(512);
         this.permMod12 = new Uint8Array(512);
         
-        // Initialize the permutation table with values based on the seed
-        this.seed(seed);
-    }
-    
-    seed(seed) {
-        // Simple hash function
-        const hash = (s) => {
-            let h = 0;
-            for(let i = 0; i < s.length; i++) {
-                h = ((h << 5) - h) + s.charCodeAt(i);
-                h |= 0;
-            }
-            return h;
-        };
-        
-        // Initialize permutation table
-        for(let i = 0; i < 256; i++) {
+        // Initialize permutation table with values 0-255
+        for (let i = 0; i < 256; i++) {
             this.p[i] = i;
         }
         
-        // Shuffle based on the seed
-        const seedValue = hash(seed);
-        for(let i = 255; i > 0; i--) {
-            const j = (seedValue + i) % (i + 1);
+        // Shuffle permutation table using Fisher-Yates algorithm with seed
+        let random = this.createRandom(seed);
+        for (let i = 255; i > 0; i--) {
+            const j = Math.floor(random() * (i + 1));
             [this.p[i], this.p[j]] = [this.p[j], this.p[i]];
         }
         
-        // Extend permutation table
-        for(let i = 0; i < 512; i++) {
+        // Extend permutation table for faster lookup
+        for (let i = 0; i < 512; i++) {
             this.perm[i] = this.p[i & 255];
             this.permMod12[i] = this.perm[i] % 12;
         }
+    }
+    
+    createRandom(seed) {
+        // Simple seeded random number generator
+        let s = seed || 1;
+        return function() {
+            s = Math.sin(s) * 10000;
+            return s - Math.floor(s);
+        };
     }
     
     // 2D simplex noise
@@ -921,12 +1152,14 @@ class SimplexNoise {
         const x0 = x - X0;
         const y0 = y - Y0;
         
-        // Determine which simplex we are in
+        // Determine which simplex we're in
         let i1, j1;
-        if(x0 > y0) {
-            i1 = 1; j1 = 0;
+        if (x0 > y0) {
+            i1 = 1;
+            j1 = 0;
         } else {
-            i1 = 0; j1 = 1;
+            i1 = 0;
+            j1 = 1;
         }
         
         // Offsets for corners
@@ -935,16 +1168,16 @@ class SimplexNoise {
         const x2 = x0 - 1 + 2 * G2;
         const y2 = y0 - 1 + 2 * G2;
         
-        // Work out the hashed gradient indices of the three simplex corners
+        // Hashed gradient indices
         const ii = i & 255;
         const jj = j & 255;
         const gi0 = this.permMod12[ii + this.perm[jj]];
         const gi1 = this.permMod12[ii + i1 + this.perm[jj + j1]];
         const gi2 = this.permMod12[ii + 1 + this.perm[jj + 1]];
         
-        // Calculate the contribution from the three corners
+        // Calculate contribution from each corner
         let t0 = 0.5 - x0 * x0 - y0 * y0;
-        if(t0 < 0) {
+        if (t0 < 0) {
             n0 = 0;
         } else {
             t0 *= t0;
@@ -952,7 +1185,7 @@ class SimplexNoise {
         }
         
         let t1 = 0.5 - x1 * x1 - y1 * y1;
-        if(t1 < 0) {
+        if (t1 < 0) {
             n1 = 0;
         } else {
             t1 *= t1;
@@ -960,7 +1193,7 @@ class SimplexNoise {
         }
         
         let t2 = 0.5 - x2 * x2 - y2 * y2;
-        if(t2 < 0) {
+        if (t2 < 0) {
             n2 = 0;
         } else {
             t2 *= t2;
@@ -972,7 +1205,6 @@ class SimplexNoise {
         return 70 * (n0 + n1 + n2);
     }
     
-    // Dot product helper
     dot(g, x, y) {
         return g[0] * x + g[1] * y;
     }
@@ -985,23 +1217,28 @@ class SimplexNoise {
     ];
 }
 
-// Initialize game when a world is loaded
-function initGame(worldData) {
-    // Get settings from storage
-    chrome.storage.local.get('settings', function(data) {
-        const settings = data.settings || {
-            vsync: false,
-            fpsCounter: false,
-            maxFramerate: 60,
-            renderDistance: 8,
-            fog: true,
-            mouseSensitivity: 5
-        };
+// Initialize game when world is created
+function initGame(worldData, settings) {
+    try {
+        console.log("[Game] Initializing game with world data:", worldData);
+        console.log("[Game] Game settings:", settings);
         
-        // Create game instance
+        // Show loading screen
+        const loadingScreen = document.getElementById('loading-screen');
+        const gameCanvas = document.getElementById('game-canvas');
+        
+        if (loadingScreen && gameCanvas) {
+            loadingScreen.classList.add('active');
+            gameCanvas.style.display = 'none';
+        }
+        
+        // Create new game instance
         gameInstance = new Game(worldData, settings);
+        console.log("[Game] Game instance created");
         
-        // Store game instance in window for access from menu.js
-        window.gameInstance = gameInstance;
-    });
+        return gameInstance;
+    } catch (error) {
+        console.error("[Game] Error initializing game:", error);
+        console.error("Stack trace:", error.stack);
+    }
 }
