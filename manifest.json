@@ -4,7 +4,6 @@
   "version": "1.0.0",
   "description": "A 3D sandbox game similar to Minecraft",
   "action": {
-    "default_popup": "index.html",
     "default_icon": {
       "16": "images/icon16.png",
       "48": "images/icon48.png",
@@ -18,5 +17,17 @@
     "16": "images/icon16.png",
     "48": "images/icon48.png",
     "128": "images/icon128.png"
-  }
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' https://cdn.babylonjs.com; object-src 'self'"
+  },
+  "background": {
+    "service_worker": "js/background.js"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["*.js", "*.html", "*.css", "images/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }
