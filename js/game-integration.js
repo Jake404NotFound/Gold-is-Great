@@ -162,8 +162,24 @@ let gameInstance = null;
 
 class Game {
     constructor(worldData, settings) {
-        this.worldData = worldData;
-        this.settings = settings;
+        // Default settings in case settings is undefined or incomplete
+        const defaultSettings = {
+            vsync: false,
+            fpsCounter: false,
+            maxFramerate: 60,
+            renderDistance: 8,
+            fog: true,
+            mouseSensitivity: 5
+        };
+        
+        // Ensure worldData is valid
+        this.worldData = worldData || { name: 'Default World', seed: Math.floor(Math.random() * 1000000).toString(), size: 'medium' };
+        
+        // Merge provided settings with defaults
+        this.settings = settings ? { ...defaultSettings, ...settings } : { ...defaultSettings };
+        
+        console.log("Game constructor - Using settings:", this.settings);
+        
         this.canvas = document.getElementById('game-canvas');
         this.engine = null;
         this.scene = null;
@@ -172,8 +188,8 @@ class Game {
         this.ground = null;
         this.blockMaterial = null;
         this.blockSize = 1;
-        this.worldSize = this.getWorldSizeValue(worldData.size);
-        this.renderDistance = settings.renderDistance;
+        this.worldSize = this.getWorldSizeValue(this.worldData.size);
+        this.renderDistance = this.settings.renderDistance;
         this.isPointerLocked = false;
         this.moveForward = false;
         this.moveBackward = false;
@@ -189,7 +205,7 @@ class Game {
         this.fpsCounter = null;
         this.pauseMenu = null;
         this.isPaused = false;
-        this.seed = parseInt(worldData.seed) || Math.floor(Math.random() * 1000000);
+        this.seed = parseInt(this.worldData.seed) || Math.floor(Math.random() * 1000000);
         this.chunkSize = 16;
         this.terrainGenerator = new TerrainGenerator(this.seed, this.worldSize);
         
@@ -362,17 +378,80 @@ class Game {
     
     // Hide loading screen
     hideLoadingScreen() {
-        const loadingScreen = document.getElementById('loading-screen');
-        const gameCanvas = document.getElementById('game-canvas');
-        
-        if (loadingScreen && gameCanvas) {
-            loadingScreen.classList.remove('active');
-            gameCanvas.style.display = 'block';
+        try {
+            console.log("Attempting to hide loading screen...");
+            const loadingScreen = document.getElementById('loading-screen');
+            const gameCanvas = document.getElementById('game-canvas');
             
-            // Lock pointer when game starts
-            this.lockPointer();
+            if (loadingScreen && gameCanvas) {
+                loadingScreen.classList.remove('active');
+                gameCanvas.style.display = 'block';
+                
+                // Lock pointer when game starts
+                this.lockPointer();
+                
+                console.log("Loading screen hidden, game started");
+                
+                // Force a scene render to ensure everything is displayed
+                if (this.scene && this.engine) {
+                    console.log("Forcing initial scene render");
+                    this.scene.render();
+                    this.engine.resize();
+                }
+                
+                // Initialize player controller after loading is complete
+                this.initPlayerController();
+            } else {
+                console.error("Could not hide loading screen: DOM elements not found");
+                console.log("loadingScreen element:", loadingScreen);
+                console.log("gameCanvas element:", gameCanvas);
+            }
+        } catch (error) {
+            console.error("Error hiding loading screen:", error);
+            console.error("Stack trace:", error.stack);
+        }
+    }
+    
+    // Initialize player controller
+    initPlayerController() {
+        try {
+            console.log("Initializing player controller");
+            // Set up player movement
+            this.scene.registerBeforeRender(() => {
+                if (this.isPaused) return;
+                
+                const cameraSpeed = this.playerSpeed;
+                
+                if (this.moveForward) {
+                    this.camera.position.addInPlace(this.camera.getDirection(BABYLON.Axis.Z).scale(cameraSpeed));
+                }
+                if (this.moveBackward) {
+                    this.camera.position.subtractInPlace(this.camera.getDirection(BABYLON.Axis.Z).scale(cameraSpeed));
+                }
+                if (this.moveLeft) {
+                    this.camera.position.subtractInPlace(this.camera.getDirection(BABYLON.Axis.X).scale(cameraSpeed));
+                }
+                if (this.moveRight) {
+                    this.camera.position.addInPlace(this.camera.getDirection(BABYLON.Axis.X).scale(cameraSpeed));
+                }
+                if (this.jump) {
+                    this.camera.cameraDirection.y += this.jumpForce;
+                    this.jump = false;
+                }
+                
+                // Update chunk manager if available
+                if (this.chunkManager) {
+                    this.chunkManager.updateChunks();
+                }
+                
+                // Update block highlighting
+                this.updateBlockHighlight();
+            });
             
-            console.log("Loading screen hidden, game started");
+            console.log("Player controller initialized");
+        } catch (error) {
+            console.error("Error initializing player controller:", error);
+            console.error("Stack trace:", error.stack);
         }
     }
 

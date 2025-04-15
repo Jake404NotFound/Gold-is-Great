@@ -1,441 +1,388 @@
-// Ensure player movement and block interaction work properly
+// Player controller for Gold is Great game
+// This file handles player movement, interaction, and controls
+
+console.log("Loading player-controller.js...");
+
 class PlayerController {
     constructor(game) {
         this.game = game;
         this.camera = game.camera;
         this.scene = game.scene;
-        this.canvas = game.canvas;
-        this.moveSpeed = game.playerSpeed;
-        this.jumpForce = game.jumpForce;
-        this.gravity = game.gravity;
-        this.playerHeight = game.playerHeight;
+        this.moveSpeed = 0.2;
+        this.jumpForce = 0.3;
+        this.gravity = -0.01;
+        this.verticalVelocity = 0;
         this.isGrounded = false;
-        this.velocity = new BABYLON.Vector3(0, 0, 0);
-        this.highlightMesh = game.highlightMesh;
+        this.raycastDistance = 1.1; // Distance to check for ground
         this.selectedBlockPosition = null;
+        this.selectedBlockFace = null;
+        this.blockReachDistance = 5; // How far player can reach to interact with blocks
         
-        // Movement flags
-        this.moveForward = false;
-        this.moveBackward = false;
-        this.moveLeft = false;
-        this.moveRight = false;
-        this.jump = false;
-        
-        // Pointer lock state
-        this.isPointerLocked = false;
-        
-        // Initialize
+        // Initialize controller
         this.init();
     }
     
     init() {
         try {
-            console.log("[PlayerController] Initializing player controls");
-            this.registerInputHandlers();
-            this.setupPhysicsUpdate();
-            console.log("[PlayerController] Player controls initialized successfully");
+            console.log("Initializing player controller");
+            
+            // Set up keyboard controls
+            this.setupKeyboardControls();
+            
+            // Set up mouse controls
+            this.setupMouseControls();
+            
+            // Set up physics and movement
+            this.setupPhysics();
+            
+            console.log("Player controller initialized successfully");
         } catch (error) {
-            console.error("[PlayerController] Error initializing player controls:", error);
+            console.error("Error initializing player controller:", error);
+            console.error("Stack trace:", error.stack);
         }
     }
     
-    registerInputHandlers() {
-        // Handle keyboard input
+    setupKeyboardControls() {
+        // Movement keys
         this.scene.actionManager = new BABYLON.ActionManager(this.scene);
         
-        // WASD movement
+        // W key (forward)
         this.scene.actionManager.registerAction(
             new BABYLON.ExecuteCodeAction(
-                {
-                    trigger: BABYLON.ActionManager.OnKeyDownTrigger,
-                    parameter: 'w'
-                },
-                () => { this.moveForward = true; }
+                { trigger: BABYLON.ActionManager.OnKeyDownTrigger, parameter: 'w' },
+                () => { this.game.moveForward = true; }
+            )
+        );
+        this.scene.actionManager.registerAction(
+            new BABYLON.ExecuteCodeAction(
+                { trigger: BABYLON.ActionManager.OnKeyUpTrigger, parameter: 'w' },
+                () => { this.game.moveForward = false; }
             )
         );
         
+        // S key (backward)
         this.scene.actionManager.registerAction(
             new BABYLON.ExecuteCodeAction(
-                {
-                    trigger: BABYLON.ActionManager.OnKeyUpTrigger,
-                    parameter: 'w'
-                },
-                () => { this.moveForward = false; }
+                { trigger: BABYLON.ActionManager.OnKeyDownTrigger, parameter: 's' },
+                () => { this.game.moveBackward = true; }
+            )
+        );
+        this.scene.actionManager.registerAction(
+            new BABYLON.ExecuteCodeAction(
+                { trigger: BABYLON.ActionManager.OnKeyUpTrigger, parameter: 's' },
+                () => { this.game.moveBackward = false; }
             )
         );
         
+        // A key (left)
         this.scene.actionManager.registerAction(
             new BABYLON.ExecuteCodeAction(
-                {
-                    trigger: BABYLON.ActionManager.OnKeyDownTrigger,
-                    parameter: 's'
-                },
-                () => { this.moveBackward = true; }
+                { trigger: BABYLON.ActionManager.OnKeyDownTrigger, parameter: 'a' },
+                () => { this.game.moveLeft = true; }
+            )
+        );
+        this.scene.actionManager.registerAction(
+            new BABYLON.ExecuteCodeAction(
+                { trigger: BABYLON.ActionManager.OnKeyUpTrigger, parameter: 'a' },
+                () => { this.game.moveLeft = false; }
             )
         );
         
+        // D key (right)
         this.scene.actionManager.registerAction(
             new BABYLON.ExecuteCodeAction(
-                {
-                    trigger: BABYLON.ActionManager.OnKeyUpTrigger,
-                    parameter: 's'
-                },
-                () => { this.moveBackward = false; }
+                { trigger: BABYLON.ActionManager.OnKeyDownTrigger, parameter: 'd' },
+                () => { this.game.moveRight = true; }
+            )
+        );
+        this.scene.actionManager.registerAction(
+            new BABYLON.ExecuteCodeAction(
+                { trigger: BABYLON.ActionManager.OnKeyUpTrigger, parameter: 'd' },
+                () => { this.game.moveRight = false; }
             )
         );
         
+        // Space key (jump)
         this.scene.actionManager.registerAction(
             new BABYLON.ExecuteCodeAction(
-                {
-                    trigger: BABYLON.ActionManager.OnKeyDownTrigger,
-                    parameter: 'a'
-                },
-                () => { this.moveLeft = true; }
-            )
-        );
-        
-        this.scene.actionManager.registerAction(
-            new BABYLON.ExecuteCodeAction(
-                {
-                    trigger: BABYLON.ActionManager.OnKeyUpTrigger,
-                    parameter: 'a'
-                },
-                () => { this.moveLeft = false; }
-            )
-        );
-        
-        this.scene.actionManager.registerAction(
-            new BABYLON.ExecuteCodeAction(
-                {
-                    trigger: BABYLON.ActionManager.OnKeyDownTrigger,
-                    parameter: 'd'
-                },
-                () => { this.moveRight = true; }
-            )
-        );
-        
-        this.scene.actionManager.registerAction(
-            new BABYLON.ExecuteCodeAction(
-                {
-                    trigger: BABYLON.ActionManager.OnKeyUpTrigger,
-                    parameter: 'd'
-                },
-                () => { this.moveRight = false; }
-            )
-        );
-        
-        // Jump with space
-        this.scene.actionManager.registerAction(
-            new BABYLON.ExecuteCodeAction(
-                {
-                    trigger: BABYLON.ActionManager.OnKeyDownTrigger,
-                    parameter: ' '
-                },
+                { trigger: BABYLON.ActionManager.OnKeyDownTrigger, parameter: ' ' },
                 () => { 
                     if (this.isGrounded) {
-                        this.jump = true;
-                        this.velocity.y = this.jumpForce;
+                        this.verticalVelocity = this.jumpForce;
                         this.isGrounded = false;
                     }
                 }
             )
         );
         
-        // Place block with E
+        // Q key (break block)
         this.scene.actionManager.registerAction(
             new BABYLON.ExecuteCodeAction(
-                {
-                    trigger: BABYLON.ActionManager.OnKeyDownTrigger,
-                    parameter: 'e'
-                },
-                () => { this.placeBlock(); }
-            )
-        );
-        
-        // Break block with Q
-        this.scene.actionManager.registerAction(
-            new BABYLON.ExecuteCodeAction(
-                {
-                    trigger: BABYLON.ActionManager.OnKeyDownTrigger,
-                    parameter: 'q'
-                },
+                { trigger: BABYLON.ActionManager.OnKeyDownTrigger, parameter: 'q' },
                 () => { this.breakBlock(); }
             )
         );
         
-        // Handle mouse click for pointer lock
-        this.canvas.addEventListener('click', () => {
-            if (!this.isPointerLocked && !this.game.isPaused) {
-                this.lockPointer();
-            }
-        });
+        // E key (place block)
+        this.scene.actionManager.registerAction(
+            new BABYLON.ExecuteCodeAction(
+                { trigger: BABYLON.ActionManager.OnKeyDownTrigger, parameter: 'e' },
+                () => { this.placeBlock(); }
+            )
+        );
         
-        // Handle pointer lock change
-        document.addEventListener('pointerlockchange', this.pointerLockChanged.bind(this), false);
-        document.addEventListener('mozpointerlockchange', this.pointerLockChanged.bind(this), false);
+        // ESC key (pause)
+        this.scene.actionManager.registerAction(
+            new BABYLON.ExecuteCodeAction(
+                { trigger: BABYLON.ActionManager.OnKeyDownTrigger, parameter: 'Escape' },
+                () => { this.togglePause(); }
+            )
+        );
     }
     
-    setupPhysicsUpdate() {
-        // Update player movement and physics
+    setupMouseControls() {
+        // Mouse look is handled by Babylon's camera system
+        
+        // Lock pointer on click
+        this.scene.onPointerDown = () => {
+            if (!this.game.isPointerLocked) {
+                this.game.lockPointer();
+            }
+        };
+    }
+    
+    setupPhysics() {
+        // Register before render to handle physics and movement
         this.scene.registerBeforeRender(() => {
-            if (this.isPointerLocked && !this.game.isPaused) {
-                this.updateMovement();
-                this.updatePhysics();
-                this.updateBlockHighlight();
-            }
-        });
-    }
-    
-    updateMovement() {
-        // Calculate movement direction
-        const cameraDirection = this.camera.getDirection(BABYLON.Vector3.Forward());
-        const cameraSide = this.camera.getDirection(BABYLON.Vector3.Right());
-        
-        // Remove vertical component for horizontal movement
-        cameraDirection.y = 0;
-        cameraDirection.normalize();
-        
-        // Apply movement based on input
-        if (this.moveForward) {
-            this.velocity.x += cameraDirection.x * this.moveSpeed;
-            this.velocity.z += cameraDirection.z * this.moveSpeed;
-        }
-        if (this.moveBackward) {
-            this.velocity.x -= cameraDirection.x * this.moveSpeed;
-            this.velocity.z -= cameraDirection.z * this.moveSpeed;
-        }
-        if (this.moveLeft) {
-            this.velocity.x -= cameraSide.x * this.moveSpeed;
-            this.velocity.z -= cameraSide.z * this.moveSpeed;
-        }
-        if (this.moveRight) {
-            this.velocity.x += cameraSide.x * this.moveSpeed;
-            this.velocity.z += cameraSide.z * this.moveSpeed;
-        }
-        
-        // Apply friction to horizontal movement
-        this.velocity.x *= 0.9;
-        this.velocity.z *= 0.9;
-    }
-    
-    updatePhysics() {
-        // Apply gravity
-        if (!this.isGrounded) {
-            this.velocity.y += this.gravity * 0.01; // Scale gravity by delta time
-        }
-        
-        // Check if player is on ground
-        const ray = new BABYLON.Ray(this.camera.position, new BABYLON.Vector3(0, -1, 0), 1.1);
-        const hit = this.scene.pickWithRay(ray);
-        
-        if (hit.hit) {
-            // Player is on ground
-            if (this.velocity.y <= 0) {
-                this.isGrounded = true;
-                this.velocity.y = 0;
-            }
-        } else {
-            this.isGrounded = false;
-        }
-        
-        // Apply velocity to camera position
-        this.camera.position.addInPlace(this.velocity);
-        
-        // Collision detection with blocks
-        this.handleCollisions();
-    }
-    
-    handleCollisions() {
-        // Simple collision detection with blocks
-        // Check in 6 directions (up, down, left, right, front, back)
-        const directions = [
-            new BABYLON.Vector3(0, 1, 0),   // Up
-            new BABYLON.Vector3(0, -1, 0),  // Down
-            new BABYLON.Vector3(1, 0, 0),   // Right
-            new BABYLON.Vector3(-1, 0, 0),  // Left
-            new BABYLON.Vector3(0, 0, 1),   // Front
-            new BABYLON.Vector3(0, 0, -1)   // Back
-        ];
-        
-        for (const direction of directions) {
-            const ray = new BABYLON.Ray(this.camera.position, direction, 0.6);
+            if (this.game.isPaused) return;
+            
+            // Apply gravity
+            this.verticalVelocity += this.gravity;
+            this.camera.position.y += this.verticalVelocity;
+            
+            // Check if grounded
+            const ray = new BABYLON.Ray(this.camera.position, new BABYLON.Vector3(0, -1, 0), this.raycastDistance);
             const hit = this.scene.pickWithRay(ray);
             
             if (hit.hit) {
-                // Move player away from collision
-                const pushVector = direction.scale(-0.1);
-                this.camera.position.addInPlace(pushVector);
-                
-                // Zero out velocity in this direction
-                if (direction.x !== 0) this.velocity.x = 0;
-                if (direction.y !== 0) this.velocity.y = 0;
-                if (direction.z !== 0) this.velocity.z = 0;
+                // If we're falling and hit the ground
+                if (this.verticalVelocity < 0) {
+                    this.isGrounded = true;
+                    this.verticalVelocity = 0;
+                    
+                    // Adjust position to be exactly on the ground
+                    const groundY = hit.pickedPoint.y + this.game.playerHeight / 2;
+                    this.camera.position.y = groundY;
+                }
+            } else {
+                this.isGrounded = false;
             }
-        }
+            
+            // Handle movement
+            const cameraSpeed = this.moveSpeed;
+            
+            if (this.game.moveForward) {
+                this.camera.position.addInPlace(this.camera.getDirection(BABYLON.Axis.Z).scale(cameraSpeed));
+            }
+            if (this.game.moveBackward) {
+                this.camera.position.subtractInPlace(this.camera.getDirection(BABYLON.Axis.Z).scale(cameraSpeed));
+            }
+            if (this.game.moveLeft) {
+                this.camera.position.subtractInPlace(this.camera.getDirection(BABYLON.Axis.X).scale(cameraSpeed));
+            }
+            if (this.game.moveRight) {
+                this.camera.position.addInPlace(this.camera.getDirection(BABYLON.Axis.X).scale(cameraSpeed));
+            }
+            
+            // Update block highlighting
+            this.updateBlockHighlight();
+        });
     }
     
     updateBlockHighlight() {
         // Cast ray from camera to find block under crosshair
-        const ray = this.scene.createPickingRay(
-            this.canvas.width / 2,
-            this.canvas.height / 2,
-            BABYLON.Matrix.Identity(),
-            this.camera
-        );
-        
-        const hit = this.scene.pickWithRay(ray, null, false);
+        const ray = this.camera.getForwardRay(this.blockReachDistance);
+        const hit = this.scene.pickWithRay(ray);
         
         if (hit.hit && hit.pickedMesh) {
-            // Get hit position
-            const hitPosition = hit.pickedPoint;
-            
             // Get block position
-            const blockX = Math.floor(hitPosition.x);
-            const blockY = Math.floor(hitPosition.y);
-            const blockZ = Math.floor(hitPosition.z);
+            const worldPos = hit.pickedPoint;
+            const faceNormal = hit.getNormal(true);
             
-            // Update highlight position
-            this.highlightMesh.position = new BABYLON.Vector3(blockX + 0.5, blockY + 0.5, blockZ + 0.5);
-            this.highlightMesh.isVisible = true;
+            // Convert to block coordinates
+            const blockX = Math.floor(worldPos.x);
+            const blockY = Math.floor(worldPos.y);
+            const blockZ = Math.floor(worldPos.z);
             
-            // Store selected block position
-            this.selectedBlockPosition = { x: blockX, y: blockY, z: blockZ };
+            // Adjust position based on face normal to get correct block
+            const adjustedX = faceNormal.x < 0 ? blockX : (faceNormal.x > 0 ? blockX - 1 : blockX);
+            const adjustedY = faceNormal.y < 0 ? blockY : (faceNormal.y > 0 ? blockY - 1 : blockY);
+            const adjustedZ = faceNormal.z < 0 ? blockZ : (faceNormal.z > 0 ? blockZ - 1 : blockZ);
+            
+            this.selectedBlockPosition = new BABYLON.Vector3(adjustedX, adjustedY, adjustedZ);
+            this.selectedBlockFace = faceNormal;
+            
+            // Update highlight mesh
+            if (this.game.highlightMesh) {
+                this.game.highlightMesh.position = new BABYLON.Vector3(
+                    adjustedX + 0.5,
+                    adjustedY + 0.5,
+                    adjustedZ + 0.5
+                );
+                this.game.highlightMesh.isVisible = true;
+            }
         } else {
-            this.highlightMesh.isVisible = false;
             this.selectedBlockPosition = null;
-        }
-    }
-    
-    placeBlock() {
-        if (this.selectedBlockPosition && this.game.chunkManager) {
-            // Get normal vector from hit face
-            const ray = this.scene.createPickingRay(
-                this.canvas.width / 2,
-                this.canvas.height / 2,
-                BABYLON.Matrix.Identity(),
-                this.camera
-            );
+            this.selectedBlockFace = null;
             
-            const hit = this.scene.pickWithRay(ray);
-            
-            if (hit.hit && hit.pickedMesh) {
-                // Get hit normal
-                const normal = hit.getNormal();
-                
-                // Calculate new block position
-                const newBlockX = Math.floor(this.selectedBlockPosition.x + normal.x);
-                const newBlockY = Math.floor(this.selectedBlockPosition.y + normal.y);
-                const newBlockZ = Math.floor(this.selectedBlockPosition.z + normal.z);
-                
-                // Check if new position is valid (not inside player)
-                const playerPos = this.camera.position;
-                const playerBlockX = Math.floor(playerPos.x);
-                const playerBlockY = Math.floor(playerPos.y);
-                const playerBlockZ = Math.floor(playerPos.z);
-                
-                if (newBlockX === playerBlockX && newBlockY === playerBlockY && newBlockZ === playerBlockZ) {
-                    return; // Don't place block inside player
-                }
-                
-                if (newBlockX === playerBlockX && newBlockY === playerBlockY + 1 && newBlockZ === playerBlockZ) {
-                    return; // Don't place block inside player's head
-                }
-                
-                // Get chunk coordinates
-                const chunkSize = this.game.chunkSize;
-                const chunkX = Math.floor(newBlockX / chunkSize);
-                const chunkZ = Math.floor(newBlockZ / chunkSize);
-                const chunkKey = `${chunkX},${chunkZ}`;
-                
-                // Get local block coordinates within chunk
-                const localX = ((newBlockX % chunkSize) + chunkSize) % chunkSize;
-                const localY = newBlockY;
-                const localZ = ((newBlockZ % chunkSize) + chunkSize) % chunkSize;
-                const blockKey = `${localX},${localY},${localZ}`;
-                
-                // Get chunk from chunk manager
-                let chunk = this.game.chunkManager.chunks[chunkKey];
-                
-                // Create or get chunk
-                if (!chunk) {
-                    this.game.chunkManager.generateChunk(chunkX, chunkZ);
-                    chunk = this.game.chunkManager.chunks[chunkKey];
-                }
-                
-                if (chunk) {
-                    // Add block to chunk
-                    chunk.blocks[blockKey] = {
-                        x: localX,
-                        y: localY,
-                        z: localZ,
-                        type: 'dirt'
-                    };
-                    
-                    // Recreate chunk mesh
-                    if (chunk.mesh) {
-                        chunk.mesh.dispose();
-                    }
-                    this.game.chunkManager.createChunkMesh(chunk);
-                    
-                    console.log(`[PlayerController] Block placed at ${newBlockX}, ${newBlockY}, ${newBlockZ}`);
-                }
+            // Hide highlight mesh
+            if (this.game.highlightMesh) {
+                this.game.highlightMesh.isVisible = false;
             }
         }
     }
     
     breakBlock() {
-        if (this.selectedBlockPosition && this.game.chunkManager) {
-            // Get chunk coordinates
-            const blockX = this.selectedBlockPosition.x;
-            const blockY = this.selectedBlockPosition.y;
-            const blockZ = this.selectedBlockPosition.z;
+        if (!this.selectedBlockPosition) return;
+        
+        try {
+            console.log(`Breaking block at ${this.selectedBlockPosition.x}, ${this.selectedBlockPosition.y}, ${this.selectedBlockPosition.z}`);
             
-            const chunkSize = this.game.chunkSize;
-            const chunkX = Math.floor(blockX / chunkSize);
-            const chunkZ = Math.floor(blockZ / chunkSize);
+            // Find chunk containing this block
+            const chunkX = Math.floor(this.selectedBlockPosition.x / this.game.chunkSize);
+            const chunkZ = Math.floor(this.selectedBlockPosition.z / this.game.chunkSize);
             const chunkKey = `${chunkX},${chunkZ}`;
-            
-            // Get local block coordinates within chunk
-            const localX = ((blockX % chunkSize) + chunkSize) % chunkSize;
-            const localY = blockY;
-            const localZ = ((blockZ % chunkSize) + chunkSize) % chunkSize;
-            const blockKey = `${localX},${localY},${localZ}`;
             
             // Get chunk
             const chunk = this.game.chunkManager.chunks[chunkKey];
+            if (!chunk) {
+                console.warn("Cannot break block: Chunk not found");
+                return;
+            }
             
-            if (chunk && chunk.blocks[blockKey]) {
-                // Remove block from chunk
+            // Get block within chunk
+            const localX = Math.floor(this.selectedBlockPosition.x) - chunkX * this.game.chunkSize;
+            const localY = Math.floor(this.selectedBlockPosition.y);
+            const localZ = Math.floor(this.selectedBlockPosition.z) - chunkZ * this.game.chunkSize;
+            const blockKey = `${localX},${localY},${localZ}`;
+            
+            // Remove block
+            if (chunk.blocks[blockKey]) {
                 delete chunk.blocks[blockKey];
                 
-                // Recreate chunk mesh
+                // Rebuild chunk mesh
                 if (chunk.mesh) {
                     chunk.mesh.dispose();
                 }
                 this.game.chunkManager.createChunkMesh(chunk);
                 
-                console.log(`[PlayerController] Block broken at ${blockX}, ${blockY}, ${blockZ}`);
+                console.log("Block broken successfully");
             }
+        } catch (error) {
+            console.error("Error breaking block:", error);
+            console.error("Stack trace:", error.stack);
         }
     }
     
-    lockPointer() {
-        this.canvas.requestPointerLock = this.canvas.requestPointerLock || this.canvas.mozRequestPointerLock;
-        this.canvas.requestPointerLock();
+    placeBlock() {
+        if (!this.selectedBlockPosition || !this.selectedBlockFace) return;
+        
+        try {
+            // Calculate new block position (adjacent to selected block)
+            const newBlockX = Math.floor(this.selectedBlockPosition.x + this.selectedBlockFace.x);
+            const newBlockY = Math.floor(this.selectedBlockPosition.y + this.selectedBlockFace.y);
+            const newBlockZ = Math.floor(this.selectedBlockPosition.z + this.selectedBlockFace.z);
+            
+            console.log(`Placing block at ${newBlockX}, ${newBlockY}, ${newBlockZ}`);
+            
+            // Find chunk for new block
+            const chunkX = Math.floor(newBlockX / this.game.chunkSize);
+            const chunkZ = Math.floor(newBlockZ / this.game.chunkSize);
+            const chunkKey = `${chunkX},${chunkZ}`;
+            
+            // Get or create chunk
+            let chunk = this.game.chunkManager.chunks[chunkKey];
+            if (!chunk) {
+                console.warn("Cannot place block: Chunk not found");
+                return;
+            }
+            
+            // Get block position within chunk
+            const localX = newBlockX - chunkX * this.game.chunkSize;
+            const localY = newBlockY;
+            const localZ = newBlockZ - chunkZ * this.game.chunkSize;
+            const blockKey = `${localX},${localY},${localZ}`;
+            
+            // Check if block already exists
+            if (chunk.blocks[blockKey]) {
+                console.warn("Cannot place block: Block already exists");
+                return;
+            }
+            
+            // Check if block would intersect with player
+            const playerPos = this.camera.position;
+            const playerMinX = playerPos.x - 0.3;
+            const playerMaxX = playerPos.x + 0.3;
+            const playerMinY = playerPos.y - 1.6;
+            const playerMaxY = playerPos.y + 0.2;
+            const playerMinZ = playerPos.z - 0.3;
+            const playerMaxZ = playerPos.z + 0.3;
+            
+            if (
+                newBlockX >= playerMinX && newBlockX <= playerMaxX &&
+                newBlockY >= playerMinY && newBlockY <= playerMaxY &&
+                newBlockZ >= playerMinZ && newBlockZ <= playerMaxZ
+            ) {
+                console.warn("Cannot place block: Would intersect with player");
+                return;
+            }
+            
+            // Add new block
+            chunk.blocks[blockKey] = {
+                x: localX,
+                y: localY,
+                z: localZ,
+                type: 'stone' // Default block type
+            };
+            
+            // Rebuild chunk mesh
+            if (chunk.mesh) {
+                chunk.mesh.dispose();
+            }
+            this.game.chunkManager.createChunkMesh(chunk);
+            
+            console.log("Block placed successfully");
+        } catch (error) {
+            console.error("Error placing block:", error);
+            console.error("Stack trace:", error.stack);
+        }
     }
     
-    pointerLockChanged() {
-        if (document.pointerLockElement === this.canvas || document.mozPointerLockElement === this.canvas) {
-            this.isPointerLocked = true;
-            console.log("[PlayerController] Pointer locked");
+    togglePause() {
+        this.game.isPaused = !this.game.isPaused;
+        
+        if (this.game.isPaused) {
+            // Show pause menu
+            if (this.game.pauseMenu) {
+                this.game.pauseMenu.isVisible = true;
+            }
+            
+            // Unlock pointer
+            document.exitPointerLock();
+            this.game.isPointerLocked = false;
         } else {
-            this.isPointerLocked = false;
-            console.log("[PlayerController] Pointer unlocked");
+            // Hide pause menu
+            if (this.game.pauseMenu) {
+                this.game.pauseMenu.isVisible = false;
+            }
+            
+            // Lock pointer
+            this.game.lockPointer();
         }
     }
 }
 
-// Export the PlayerController class
-if (typeof module !== 'undefined') {
-    module.exports = { PlayerController };
-}
+// Export PlayerController class
+window.PlayerController = PlayerController;
+
+console.log("player-controller.js loaded successfully");

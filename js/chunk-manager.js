@@ -92,32 +92,68 @@ class ChunkManager {
     }
     
     processChunkQueue() {
-        // Update loading progress
-        if (this.game.updateLoadingProgress) {
-            const total = this.chunkQueue.length + Object.keys(this.chunks).length;
-            const completed = Object.keys(this.chunks).length;
-            const progress = total > 0 ? (completed / total) * 100 : 100;
-            this.game.updateLoadingProgress(progress);
-        }
-        
-        // Process chunks in queue
-        let chunksProcessed = 0;
-        while (this.chunkQueue.length > 0 && chunksProcessed < this.maxChunksPerFrame) {
-            const chunk = this.chunkQueue.shift();
-            this.generateChunk(chunk.x, chunk.z);
-            chunksProcessed++;
-        }
-        
-        // Continue processing in next frame if there are more chunks
-        if (this.chunkQueue.length > 0) {
-            requestAnimationFrame(() => this.processChunkQueue());
-        } else {
-            console.log("All chunks generated successfully");
-            this.isGenerating = false;
+        try {
+            // Update loading progress
+            if (this.game.updateLoadingProgress) {
+                const total = this.chunkQueue.length + Object.keys(this.chunks).length;
+                const completed = Object.keys(this.chunks).length;
+                const progress = total > 0 ? (completed / total) * 100 : 100;
+                this.game.updateLoadingProgress(progress);
+                console.log(`Chunk loading progress: ${progress.toFixed(2)}% (${completed}/${total})`);
+            }
             
-            // Hide loading screen when done
-            if (this.game.hideLoadingScreen) {
-                this.game.hideLoadingScreen();
+            // Process chunks in queue
+            let chunksProcessed = 0;
+            while (this.chunkQueue.length > 0 && chunksProcessed < this.maxChunksPerFrame) {
+                const chunk = this.chunkQueue.shift();
+                this.generateChunk(chunk.x, chunk.z);
+                chunksProcessed++;
+            }
+            
+            // Continue processing in next frame if there are more chunks
+            if (this.chunkQueue.length > 0) {
+                requestAnimationFrame(() => this.processChunkQueue());
+            } else {
+                console.log("All chunks generated successfully");
+                this.isGenerating = false;
+                
+                // Ensure we have at least one chunk before showing the game
+                if (Object.keys(this.chunks).length === 0) {
+                    console.error("No chunks were generated! Generating emergency chunk at origin");
+                    this.generateChunk(0, 0);
+                }
+                
+                // Add a small delay before hiding loading screen to ensure everything is rendered
+                console.log("Preparing to hide loading screen...");
+                setTimeout(() => {
+                    // Hide loading screen when done
+                    if (this.game && this.game.hideLoadingScreen) {
+                        console.log("Hiding loading screen now");
+                        this.game.hideLoadingScreen();
+                    } else {
+                        console.error("Cannot hide loading screen: hideLoadingScreen method not found");
+                        // Fallback method to hide loading screen
+                        const loadingScreen = document.getElementById('loading-screen');
+                        const gameCanvas = document.getElementById('game-canvas');
+                        if (loadingScreen && gameCanvas) {
+                            console.log("Using fallback method to hide loading screen");
+                            loadingScreen.classList.remove('active');
+                            gameCanvas.style.display = 'block';
+                        }
+                    }
+                }, 500);
+            }
+        } catch (error) {
+            console.error("Error in processChunkQueue:", error);
+            console.error("Stack trace:", error.stack);
+            
+            // Emergency fallback to hide loading screen even if there's an error
+            const loadingScreen = document.getElementById('loading-screen');
+            const gameCanvas = document.getElementById('game-canvas');
+            if (loadingScreen && gameCanvas) {
+                console.log("Emergency: Hiding loading screen after error");
+                loadingScreen.classList.remove('active');
+                gameCanvas.style.display = 'block';
             }
         }
     }

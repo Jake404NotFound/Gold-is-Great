@@ -232,7 +232,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Start the game after loading is complete
                 setTimeout(() => {
                     showGame();
-                    initGame(world);
+                    initGame(world, currentSettings);
                 }, 500);
             }
             
