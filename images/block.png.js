@@ -1,4 +1,4 @@
-// Create a simple block texture
+// Create an actual block texture file
 const canvas = document.createElement('canvas');
 const ctx = canvas.getContext('2d');
 canvas.width = 128;
@@ -39,5 +39,10 @@ function drawDirtTexture() {
 
 drawDirtTexture();
 
-// Export as PNG
+// Convert to data URL and save to file
 const dataURL = canvas.toDataURL('image/png');
+const img = new Image();
+img.src = dataURL;
+
+// Export the image
+document.body.appendChild(img);

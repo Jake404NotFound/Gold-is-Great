@@ -49,92 +49,140 @@ class Game {
     }
 
     init() {
-        // Initialize Babylon.js engine
-        this.engine = new BABYLON.Engine(this.canvas, this.settings.vsync, { preserveDrawingBuffer: true, stencil: true });
-        
-        // Set max framerate if not unlimited
-        if (this.settings.maxFramerate > 0) {
-            this.engine.setHardwareScalingLevel(1 / (this.settings.maxFramerate / 60));
-        }
-        
-        // Create scene
-        this.createScene();
-        
-        // Register event handlers
-        this.registerEventHandlers();
-        
-        // Start the render loop
-        this.engine.runRenderLoop(() => {
-            if (!this.isPaused) {
-                this.scene.render();
-                
-                // Update FPS counter if enabled
-                if (this.settings.fpsCounter && this.fpsCounter) {
-                    this.fpsCounter.text = `FPS: ${Math.round(this.engine.getFps())}`;
-                }
-                
-                // Update chunks based on player position
-                this.updateChunks();
+        try {
+            console.log("Game initialization started");
+            // Initialize Babylon.js engine
+            this.engine = new BABYLON.Engine(this.canvas, this.settings.vsync, { preserveDrawingBuffer: true, stencil: true });
+            console.log("Babylon engine created successfully");
+            
+            // Set max framerate if not unlimited
+            if (this.settings.maxFramerate > 0) {
+                this.engine.setHardwareScalingLevel(1 / (this.settings.maxFramerate / 60));
+                console.log(`Max framerate set to ${this.settings.maxFramerate}`);
             }
-        });
-        
-        // Handle window resize
-        window.addEventListener('resize', () => {
-            this.engine.resize();
-        });
+            
+            // Create scene
+            console.log("Creating scene...");
+            this.createScene();
+            console.log("Scene created successfully");
+            
+            // Register event handlers
+            console.log("Registering event handlers...");
+            this.registerEventHandlers();
+            console.log("Event handlers registered");
+            
+            // Start the render loop
+            console.log("Starting render loop...");
+            this.engine.runRenderLoop(() => {
+                if (!this.isPaused) {
+                    this.scene.render();
+                    
+                    // Update FPS counter if enabled
+                    if (this.settings.fpsCounter && this.fpsCounter) {
+                        this.fpsCounter.text = `FPS: ${Math.round(this.engine.getFps())}`;
+                    }
+                    
+                    // Update chunks based on player position
+                    this.updateChunks();
+                }
+            });
+            console.log("Render loop started");
+            
+            // Handle window resize
+            window.addEventListener('resize', () => {
+                this.engine.resize();
+            });
+            console.log("Window resize handler added");
+            
+            // Initialize Babylon debugger if available
+            if (window.babylonDebugger) {
+                window.babylonDebugger.initialize(this.scene);
+                console.log("Babylon debugger initialized");
+            }
+        } catch (error) {
+            console.error("Error during game initialization:", error);
+            console.error("Stack trace:", error.stack);
+        }
     }
 
     createScene() {
-        // Create a new scene
-        this.scene = new BABYLON.Scene(this.engine);
-        
-        // Set gravity for physics
-        this.scene.gravity = new BABYLON.Vector3(0, this.gravity, 0);
-        this.scene.collisionsEnabled = true;
-        
-        // Create camera
-        this.camera = new BABYLON.FreeCamera('playerCamera', new BABYLON.Vector3(0, this.playerHeight, 0), this.scene);
-        this.camera.applyGravity = true;
-        this.camera.checkCollisions = true;
-        this.camera.ellipsoid = new BABYLON.Vector3(0.5, 0.9, 0.5);
-        this.camera.minZ = 0.1;
-        this.camera.attachControl(this.canvas, true);
-        this.camera.speed = 0.2 * (this.settings.mouseSensitivity / 5);
-        this.camera.angularSensibility = 1000 / this.settings.mouseSensitivity;
-        
-        // Create lights
-        this.light = new BABYLON.HemisphericLight('light', new BABYLON.Vector3(0, 1, 0), this.scene);
-        this.light.intensity = 0.7;
-        
-        // Add directional light for shadows
-        const directionalLight = new BABYLON.DirectionalLight("directionalLight", new BABYLON.Vector3(-0.5, -1, -0.5), this.scene);
-        directionalLight.intensity = 0.5;
-        
-        // Create block material
-        this.createBlockMaterial();
-        
-        // Generate initial world chunks
-        this.generateInitialChunks();
-        
-        // Create FPS counter if enabled
-        if (this.settings.fpsCounter) {
-            this.createFpsCounter();
-        }
-        
-        // Create block highlight mesh
-        this.createHighlightMesh();
-        
-        // Create crosshair
-        this.createCrosshair();
-        
-        // Create pause menu
-        this.createPauseMenu();
-        
-        // Set fog if enabled
-        if (this.settings.fog) {
-            this.scene.fogMode = BABYLON.Scene.FOGMODE_EXP;
-            this.scene.fogDensity = 0.01;
-            this.scene.fogColor = new BABYLON.Color3(0.8, 0.8, 0.8);
+        try {
+            console.log("Creating new Babylon.js scene");
+            // Create a new scene
+            this.scene = new BABYLON.Scene(this.engine);
+            
+            // Set gravity for physics
+            this.scene.gravity = new BABYLON.Vector3(0, this.gravity, 0);
+            this.scene.collisionsEnabled = true;
+            console.log("Scene physics configured");
+            
+            // Create camera
+            console.log("Creating player camera");
+            this.camera = new BABYLON.FreeCamera('playerCamera', new BABYLON.Vector3(0, this.playerHeight, 0), this.scene);
+            this.camera.applyGravity = true;
+            this.camera.checkCollisions = true;
+            this.camera.ellipsoid = new BABYLON.Vector3(0.5, 0.9, 0.5);
+            this.camera.minZ = 0.1;
+            this.camera.attachControl(this.canvas, true);
+            this.camera.speed = 0.2 * (this.settings.mouseSensitivity / 5);
+            this.camera.angularSensibility = 1000 / this.settings.mouseSensitivity;
+            console.log("Player camera created and configured");
+            
+            // Create lights
+            console.log("Creating scene lighting");
+            this.light = new BABYLON.HemisphericLight('light', new BABYLON.Vector3(0, 1, 0), this.scene);
+            this.light.intensity = 0.7;
+            
+            // Add directional light for shadows
+            const directionalLight = new BABYLON.DirectionalLight("directionalLight", new BABYLON.Vector3(-0.5, -1, -0.5), this.scene);
+            directionalLight.intensity = 0.5;
+            console.log("Scene lighting created");
+            
+            // Create block material
+            console.log("Creating block materials");
+            this.createBlockMaterial();
+            console.log("Block materials created");
+            
+            // Generate initial world chunks
+            console.log("Generating initial world chunks");
+            this.generateInitialChunks();
+            console.log("Initial world chunks generated");
+            
+            // Create FPS counter if enabled
+            if (this.settings.fpsCounter) {
+                console.log("Creating FPS counter");
+                this.createFpsCounter();
+                console.log("FPS counter created");
+            }
+            
+            // Create block highlight mesh
+            console.log("Creating block highlight mesh");
+            this.createHighlightMesh();
+            console.log("Block highlight mesh created");
+            
+            // Create crosshair
+            console.log("Creating crosshair");
+            this.createCrosshair();
+            console.log("Crosshair created");
+            
+            // Create pause menu
+            console.log("Creating pause menu");
+            this.createPauseMenu();
+            console.log("Pause menu created");
+            
+            // Set fog if enabled
+            if (this.settings.fog) {
+                console.log("Configuring scene fog");
+                this.scene.fogMode = BABYLON.Scene.FOGMODE_EXP;
+                this.scene.fogDensity = 0.01;
+                this.scene.fogColor = new BABYLON.Color3(0.8, 0.8, 0.8);
+                console.log("Scene fog configured");
+            }
+            
+            console.log("Scene creation completed successfully");
+        } catch (error) {
+            console.error("Error during scene creation:", error);
+            console.error("Stack trace:", error.stack);
         }
     }
 
@@ -151,101 +199,134 @@ class Game {
     }
 
     createFpsCounter() {
-        // Create a dynamic texture for FPS counter
-        const fpsTexture = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI('UI');
-        
-        // Create text block for FPS
-        this.fpsCounter = new BABYLON.GUI.TextBlock();
-        this.fpsCounter.text = 'FPS: 0';
-        this.fpsCounter.color = 'white';
-        this.fpsCounter.fontSize = 16;
-        this.fpsCounter.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT;
-        this.fpsCounter.textVerticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
-        this.fpsCounter.paddingTop = '10px';
-        this.fpsCounter.paddingRight = '10px';
-        
-        // Add to the UI
-        fpsTexture.addControl(this.fpsCounter);
+        try {
+            // Check if GUI is properly loaded
+            if (!BABYLON.GUI) {
+                console.error("BABYLON.GUI is not defined. GUI module may not be loaded properly.");
+                return;
+            }
+            
+            // Create a dynamic texture for FPS counter
+            const fpsTexture = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI('UI');
+            
+            // Create text block for FPS
+            this.fpsCounter = new BABYLON.GUI.TextBlock();
+            this.fpsCounter.text = 'FPS: 0';
+            this.fpsCounter.color = 'white';
+            this.fpsCounter.fontSize = 16;
+            this.fpsCounter.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT;
+            this.fpsCounter.textVerticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
+            this.fpsCounter.paddingTop = '10px';
+            this.fpsCounter.paddingRight = '10px';
+            
+            // Add to the UI
+            fpsTexture.addControl(this.fpsCounter);
+        } catch (error) {
+            console.error("Error creating FPS counter:", error);
+            // Continue without FPS counter if there's an error
+        }
     }
 
     createCrosshair() {
-        // Create a dynamic texture for the crosshair
-        const guiTexture = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI('UI');
-        
-        // Create crosshair
-        const crosshair = new BABYLON.GUI.Ellipse();
-        crosshair.width = "10px";
-        crosshair.height = "10px";
-        crosshair.color = "white";
-        crosshair.thickness = 2;
-        crosshair.background = "transparent";
-        
-        // Add to the UI
-        guiTexture.addControl(crosshair);
+        try {
+            // Check if GUI is properly loaded
+            if (!BABYLON.GUI) {
+                console.error("BABYLON.GUI is not defined. GUI module may not be loaded properly.");
+                return;
+            }
+            
+            // Create a dynamic texture for the crosshair
+            const guiTexture = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI('UI');
+            
+            // Create crosshair
+            const crosshair = new BABYLON.GUI.Ellipse();
+            crosshair.width = "10px";
+            crosshair.height = "10px";
+            crosshair.color = "white";
+            crosshair.thickness = 2;
+            crosshair.background = "transparent";
+            
+            // Add to the UI
+            guiTexture.addControl(crosshair);
+        } catch (error) {
+            console.error("Error creating crosshair:", error);
+            // Continue without crosshair if there's an error
+        }
     }
 
     createPauseMenu() {
-        // Create a dynamic texture for the pause menu
-        const pauseTexture = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI('PauseUI');
-        
-        // Create pause menu container
-        this.pauseMenu = new BABYLON.GUI.Rectangle();
-        this.pauseMenu.width = "400px";
-        this.pauseMenu.height = "300px";
-        this.pauseMenu.cornerRadius = 10;
-        this.pauseMenu.color = "#FFD700";
-        this.pauseMenu.thickness = 2;
-        this.pauseMenu.background = "#000000CC";
-        this.pauseMenu.isVisible = false;
-        pauseTexture.addControl(this.pauseMenu);
-        
-        // Create pause menu title
-        const pauseTitle = new BABYLON.GUI.TextBlock();
-        pauseTitle.text = "PAUSED";
-        pauseTitle.color = "#FFD700";
-        pauseTitle.fontSize = 24;
-        pauseTitle.height = "40px";
-        pauseTitle.top = "-100px";
-        this.pauseMenu.addControl(pauseTitle);
-        
-        // Create resume button
-        const resumeButton = BABYLON.GUI.Button.CreateSimpleButton("resumeButton", "Resume Game");
-        resumeButton.width = "200px";
-        resumeButton.height = "40px";
-        resumeButton.color = "white";
-        resumeButton.background = "#3a3a3a";
-        resumeButton.cornerRadius = 5;
-        resumeButton.top = "-40px";
-        resumeButton.onPointerUpObservable.add(() => {
-            this.togglePause();
-        });
-        this.pauseMenu.addControl(resumeButton);
-        
-        // Create save button
-        const saveButton = BABYLON.GUI.Button.CreateSimpleButton("saveButton", "Save World");
-        saveButton.width = "200px";
-        saveButton.height = "40px";
-        saveButton.color = "white";
-        saveButton.background = "#3a3a3a";
-        saveButton.cornerRadius = 5;
-        saveButton.top = "10px";
-        saveButton.onPointerUpObservable.add(() => {
-            this.saveWorld();
-        });
-        this.pauseMenu.addControl(saveButton);
-        
-        // Create quit button
-        const quitButton = BABYLON.GUI.Button.CreateSimpleButton("quitButton", "Quit to Menu");
-        quitButton.width = "200px";
-        quitButton.height = "40px";
-        quitButton.color = "white";
-        quitButton.background = "#3a3a3a";
-        quitButton.cornerRadius = 5;
-        quitButton.top = "60px";
-        quitButton.onPointerUpObservable.add(() => {
-            this.quitToMenu();
-        });
-        this.pauseMenu.addControl(quitButton);
+        try {
+            // Check if GUI is properly loaded
+            if (!BABYLON.GUI) {
+                console.error("BABYLON.GUI is not defined. GUI module may not be loaded properly.");
+                return;
+            }
+            
+            // Create a dynamic texture for the pause menu
+            const pauseTexture = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI('PauseUI');
+            
+            // Create pause menu container
+            this.pauseMenu = new BABYLON.GUI.Rectangle();
+            this.pauseMenu.width = "400px";
+            this.pauseMenu.height = "300px";
+            this.pauseMenu.cornerRadius = 10;
+            this.pauseMenu.color = "#FFD700";
+            this.pauseMenu.thickness = 2;
+            this.pauseMenu.background = "#000000CC";
+            this.pauseMenu.isVisible = false;
+            pauseTexture.addControl(this.pauseMenu);
+            
+            // Create pause menu title
+            const pauseTitle = new BABYLON.GUI.TextBlock();
+            pauseTitle.text = "PAUSED";
+            pauseTitle.color = "#FFD700";
+            pauseTitle.fontSize = 24;
+            pauseTitle.height = "40px";
+            pauseTitle.top = "-100px";
+            this.pauseMenu.addControl(pauseTitle);
+            
+            // Create resume button
+            const resumeButton = BABYLON.GUI.Button.CreateSimpleButton("resumeButton", "Resume Game");
+            resumeButton.width = "200px";
+            resumeButton.height = "40px";
+            resumeButton.color = "white";
+            resumeButton.background = "#3a3a3a";
+            resumeButton.cornerRadius = 5;
+            resumeButton.top = "-40px";
+            resumeButton.onPointerUpObservable.add(() => {
+                this.togglePause();
+            });
+            this.pauseMenu.addControl(resumeButton);
+            
+            // Create save button
+            const saveButton = BABYLON.GUI.Button.CreateSimpleButton("saveButton", "Save World");
+            saveButton.width = "200px";
+            saveButton.height = "40px";
+            saveButton.color = "white";
+            saveButton.background = "#3a3a3a";
+            saveButton.cornerRadius = 5;
+            saveButton.top = "10px";
+            saveButton.onPointerUpObservable.add(() => {
+                this.saveWorld();
+            });
+            this.pauseMenu.addControl(saveButton);
+            
+            // Create quit button
+            const quitButton = BABYLON.GUI.Button.CreateSimpleButton("quitButton", "Quit to Menu");
+            quitButton.width = "200px";
+            quitButton.height = "40px";
+            quitButton.color = "white";
+            quitButton.background = "#3a3a3a";
+            quitButton.cornerRadius = 5;
+            quitButton.top = "60px";
+            quitButton.onPointerUpObservable.add(() => {
+                this.quitToMenu();
+            });
+            this.pauseMenu.addControl(quitButton);
+        } catch (error) {
+            console.error("Error creating pause menu:", error);
+            // Continue without pause menu if there's an error
+        }
     }
 
     createHighlightMesh() {
