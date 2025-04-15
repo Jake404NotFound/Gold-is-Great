@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gold is Great</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="game-container">
+        <!-- Main Menu -->
+        <div id="main-menu" class="menu-screen active">
+            <div class="game-title">Gold is Great</div>
+            <div class="menu-buttons">
+                <button id="play-button" class="menu-button">Play</button>
+                <button id="settings-button" class="menu-button">Settings</button>
+                <button id="exit-button" class="menu-button">Exit</button>
+            </div>
+        </div>
+
+        <!-- World Selection Menu -->
+        <div id="world-selection" class="menu-screen">
+            <div class="menu-title">Select World</div>
+            <div id="worlds-list" class="worlds-container">
+                <!-- World items will be dynamically added here -->
+            </div>
+            <button id="create-world-button" class="menu-button">Create New World</button>
+            <button id="back-to-main-from-worlds" class="menu-button back-button">Back</button>
+        </div>
+
+        <!-- World Creation Menu -->
+        <div id="world-creation" class="menu-screen">
+            <div class="menu-title">Create New World</div>
+            <div class="creation-options">
+                <div class="option-group">
+                    <label for="world-name">World Name:</label>
+                    <input type="text" id="world-name" placeholder="My World">
+                </div>
+                <div class="option-group">
+                    <label for="world-seed">Seed (Optional):</label>
+                    <input type="text" id="world-seed" placeholder="Random">
+                </div>
+                <div class="option-group">
+                    <label for="world-size">World Size:</label>
+                    <select id="world-size">
+                        <option value="small">Small</option>
+                        <option value="medium" selected>Medium</option>
+                        <option value="large">Large</option>
+                    </select>
+                </div>
+            </div>
+            <div class="creation-buttons">
+                <button id="start-world-button" class="menu-button">Create World</button>
+                <button id="back-to-worlds" class="menu-button back-button">Back</button>
+            </div>
+        </div>
+
+        <!-- Settings Menu -->
+        <div id="settings-menu" class="menu-screen">
+            <div class="menu-title">Settings</div>
+            <div class="settings-options">
+                <div class="setting-item">
+                    <label for="vsync">Vsync:</label>
+                    <div class="toggle-switch">
+                        <input type="checkbox" id="vsync" class="toggle-input">
+                        <label for="vsync" class="toggle-label"></label>
+                    </div>
+                </div>
+                <div class="setting-item">
+                    <label for="fps-counter">FPS Counter:</label>
+                    <div class="toggle-switch">
+                        <input type="checkbox" id="fps-counter" class="toggle-input">
+                        <label for="fps-counter" class="toggle-label"></label>
+                    </div>
+                </div>
+                <div class="setting-item">
+                    <label for="max-framerate">Max Framerate:</label>
+                    <select id="max-framerate">
+                        <option value="30">30 FPS</option>
+                        <option value="60" selected>60 FPS</option>
+                        <option value="120">120 FPS</option>
+                        <option value="0">Unlimited</option>
+                    </select>
+                </div>
+                <div class="setting-item">
+                    <label for="render-distance">Render Distance:</label>
+                    <input type="range" id="render-distance" min="2" max="16" value="8" class="slider">
+                    <span id="render-distance-value">8</span>
+                </div>
+                <div class="setting-item">
+                    <label for="fog">Fog:</label>
+                    <div class="toggle-switch">
+                        <input type="checkbox" id="fog" class="toggle-input" checked>
+                        <label for="fog" class="toggle-label"></label>
+                    </div>
+                </div>
+                <div class="setting-item">
+                    <label for="mouse-sensitivity">Mouse Sensitivity:</label>
+                    <input type="range" id="mouse-sensitivity" min="1" max="10" value="5" class="slider">
+                    <span id="mouse-sensitivity-value">5</span>
+                </div>
+            </div>
+            <button id="save-settings" class="menu-button">Save</button>
+            <button id="back-to-main-from-settings" class="menu-button back-button">Back</button>
+        </div>
+
+        <!-- Loading Screen -->
+        <div id="loading-screen" class="menu-screen">
+            <div class="loading-title">Loading World...</div>
+            <div class="progress-container">
+                <div id="progress-bar" class="progress-bar"></div>
+            </div>
+            <div id="loading-percentage">0%</div>
+        </div>
+
+        <!-- Game Canvas -->
+        <canvas id="game-canvas"></canvas>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.babylonjs.com/babylon.js"></script>
+    <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+    <script src="js/menu.js"></script>
+    <script src="js/game.js"></script>
+</body>
+</html>
