@@ -29,8 +29,13 @@ class Game {
         this.selectedBlockPosition = null;
         this.highlightMesh = null;
         this.fpsCounter = null;
+        this.pauseMenu = null;
+        this.isPaused = false;
         this.seed = parseInt(worldData.seed) || Math.floor(Math.random() * 1000000);
-        this.noiseGenerator = new SimplexNoise(this.seed.toString());
+        this.chunks = {};
+        this.chunkSize = 16;
+        this.loadedChunks = new Set();
+        this.terrainGenerator = new TerrainGenerator(this.seed, this.worldSize);
         this.init();
     }
 
@@ -60,11 +65,16 @@ class Game {
         
         // Start the render loop
         this.engine.runRenderLoop(() => {
-            this.scene.render();
-            
-            // Update FPS counter if enabled
-            if (this.settings.fpsCounter && this.fpsCounter) {
-                this.fpsCounter.text = `FPS: ${Math.round(this.engine.getFps())}`;
+            if (!this.isPaused) {
+                this.scene.render();
+                
+                // Update FPS counter if enabled
+                if (this.settings.fpsCounter && this.fpsCounter) {
+                    this.fpsCounter.text = `FPS: ${Math.round(this.engine.getFps())}`;
+                }
+                
+                // Update chunks based on player position
+                this.updateChunks();
             }
         });
         
@@ -96,11 +106,15 @@ class Game {
         this.light = new BABYLON.HemisphericLight('light', new BABYLON.Vector3(0, 1, 0), this.scene);
         this.light.intensity = 0.7;
         
+        // Add directional light for shadows
+        const directionalLight = new BABYLON.DirectionalLight("directionalLight", new BABYLON.Vector3(-0.5, -1, -0.5), this.scene);
+        directionalLight.intensity = 0.5;
+        
         // Create block material
         this.createBlockMaterial();
         
-        // Generate world
-        this.generateWorld();
+        // Generate initial world chunks
+        this.generateInitialChunks();
         
         // Create FPS counter if enabled
         if (this.settings.fpsCounter) {
@@ -109,6 +123,12 @@ class Game {
         
         // Create block highlight mesh
         this.createHighlightMesh();
+        
+        // Create crosshair
+        this.createCrosshair();
+        
+        // Create pause menu
+        this.createPauseMenu();
         
         // Set fog if enabled
         if (this.settings.fog) {
@@ -148,6 +168,86 @@ class Game {
         fpsTexture.addControl(this.fpsCounter);
     }
 
+    createCrosshair() {
+        // Create a dynamic texture for the crosshair
+        const guiTexture = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI('UI');
+        
+        // Create crosshair
+        const crosshair = new BABYLON.GUI.Ellipse();
+        crosshair.width = "10px";
+        crosshair.height = "10px";
+        crosshair.color = "white";
+        crosshair.thickness = 2;
+        crosshair.background = "transparent";
+        
+        // Add to the UI
+        guiTexture.addControl(crosshair);
+    }
+
+    createPauseMenu() {
+        // Create a dynamic texture for the pause menu
+        const pauseTexture = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI('PauseUI');
+        
+        // Create pause menu container
+        this.pauseMenu = new BABYLON.GUI.Rectangle();
+        this.pauseMenu.width = "400px";
+        this.pauseMenu.height = "300px";
+        this.pauseMenu.cornerRadius = 10;
+        this.pauseMenu.color = "#FFD700";
+        this.pauseMenu.thickness = 2;
+        this.pauseMenu.background = "#000000CC";
+        this.pauseMenu.isVisible = false;
+        pauseTexture.addControl(this.pauseMenu);
+        
+        // Create pause menu title
+        const pauseTitle = new BABYLON.GUI.TextBlock();
+        pauseTitle.text = "PAUSED";
+        pauseTitle.color = "#FFD700";
+        pauseTitle.fontSize = 24;
+        pauseTitle.height = "40px";
+        pauseTitle.top = "-100px";
+        this.pauseMenu.addControl(pauseTitle);
+        
+        // Create resume button
+        const resumeButton = BABYLON.GUI.Button.CreateSimpleButton("resumeButton", "Resume Game");
+        resumeButton.width = "200px";
+        resumeButton.height = "40px";
+        resumeButton.color = "white";
+        resumeButton.background = "#3a3a3a";
+        resumeButton.cornerRadius = 5;
+        resumeButton.top = "-40px";
+        resumeButton.onPointerUpObservable.add(() => {
+            this.togglePause();
+        });
+        this.pauseMenu.addControl(resumeButton);
+        
+        // Create save button
+        const saveButton = BABYLON.GUI.Button.CreateSimpleButton("saveButton", "Save World");
+        saveButton.width = "200px";
+        saveButton.height = "40px";
+        saveButton.color = "white";
+        saveButton.background = "#3a3a3a";
+        saveButton.cornerRadius = 5;
+        saveButton.top = "10px";
+        saveButton.onPointerUpObservable.add(() => {
+            this.saveWorld();
+        });
+        this.pauseMenu.addControl(saveButton);
+        
+        // Create quit button
+        const quitButton = BABYLON.GUI.Button.CreateSimpleButton("quitButton", "Quit to Menu");
+        quitButton.width = "200px";
+        quitButton.height = "40px";
+        quitButton.color = "white";
+        quitButton.background = "#3a3a3a";
+        quitButton.cornerRadius = 5;
+        quitButton.top = "60px";
+        quitButton.onPointerUpObservable.add(() => {
+            this.quitToMenu();
+        });
+        this.pauseMenu.addControl(quitButton);
+    }
+
     createHighlightMesh() {
         // Create a highlight mesh for block selection
         this.highlightMesh = BABYLON.MeshBuilder.CreateBox('highlight', { size: this.blockSize + 0.01 }, this.scene);
@@ -162,81 +262,201 @@ class Game {
         this.highlightMesh.isVisible = false;
     }
 
-    generateWorld() {
-        // Generate terrain based on simplex noise
-        const halfSize = Math.floor(this.worldSize / 2);
-        const heightScale = 10; // Maximum height variation
+    generateInitialChunks() {
+        // Generate chunks around player
+        const playerChunkX = Math.floor(this.camera.position.x / this.chunkSize);
+        const playerChunkZ = Math.floor(this.camera.position.z / this.chunkSize);
         
-        // Create ground
-        this.ground = BABYLON.MeshBuilder.CreateGround('ground', { width: this.worldSize, height: this.worldSize }, this.scene);
-        this.ground.position = new BABYLON.Vector3(0, -1, 0);
-        this.ground.checkCollisions = true;
-        
-        // Create ground material
-        const groundMaterial = new BABYLON.StandardMaterial('groundMaterial', this.scene);
-        groundMaterial.diffuseColor = new BABYLON.Color3(0.5, 0.5, 0.3);
-        this.ground.material = groundMaterial;
-        
-        // Generate blocks based on render distance
-        for (let x = -this.renderDistance; x <= this.renderDistance; x++) {
-            for (let z = -this.renderDistance; z <= this.renderDistance; z++) {
-                // Get height from noise
-                const worldX = x;
-                const worldZ = z;
-                
-                // Generate height using simplex noise
-                const nx = worldX / this.worldSize;
-                const nz = worldZ / this.worldSize;
-                const height = Math.floor(this.noiseGenerator.noise2D(nx, nz) * heightScale);
-                
-                // Create block at position
-                this.createBlock(worldX, height, worldZ);
-                
-                // Add some blocks below the surface
-                for (let y = height - 1; y > height - 3; y--) {
-                    if (Math.random() > 0.3) { // 70% chance to create a block
-                        this.createBlock(worldX, y, worldZ);
-                    }
-                }
+        // Generate chunks within render distance
+        for (let x = playerChunkX - this.settings.renderDistance; x <= playerChunkX + this.settings.renderDistance; x++) {
+            for (let z = playerChunkZ - this.settings.renderDistance; z <= playerChunkZ + this.settings.renderDistance; z++) {
+                this.generateChunk(x, z);
             }
         }
         
         // Position player above the terrain
         const playerX = 0;
         const playerZ = 0;
-        const nx = playerX / this.worldSize;
-        const nz = playerZ / this.worldSize;
-        const height = Math.floor(this.noiseGenerator.noise2D(nx, nz) * heightScale);
+        const height = this.terrainGenerator.getHeightAt(playerX, playerZ);
         this.camera.position = new BABYLON.Vector3(playerX, height + this.playerHeight + 1, playerZ);
     }
 
-    createBlock(x, y, z) {
-        // Create a unique key for this block position
-        const key = `${x},${y},${z}`;
+    updateChunks() {
+        // Get current player chunk
+        const playerChunkX = Math.floor(this.camera.position.x / this.chunkSize);
+        const playerChunkZ = Math.floor(this.camera.position.z / this.chunkSize);
         
-        // Check if block already exists at this position
-        if (this.blocks[key]) {
+        // Check which chunks need to be loaded or unloaded
+        const chunksToLoad = new Set();
+        const chunksToUnload = new Set(this.loadedChunks);
+        
+        // Determine chunks to load
+        for (let x = playerChunkX - this.settings.renderDistance; x <= playerChunkX + this.settings.renderDistance; x++) {
+            for (let z = playerChunkZ - this.settings.renderDistance; z <= playerChunkZ + this.settings.renderDistance; z++) {
+                const chunkKey = `${x},${z}`;
+                chunksToLoad.add(chunkKey);
+                chunksToUnload.delete(chunkKey);
+            }
+        }
+        
+        // Load new chunks
+        chunksToLoad.forEach(chunkKey => {
+            if (!this.loadedChunks.has(chunkKey)) {
+                const [x, z] = chunkKey.split(',').map(Number);
+                this.generateChunk(x, z);
+                this.loadedChunks.add(chunkKey);
+            }
+        });
+        
+        // Unload distant chunks
+        chunksToUnload.forEach(chunkKey => {
+            this.unloadChunk(chunkKey);
+            this.loadedChunks.delete(chunkKey);
+        });
+    }
+
+    generateChunk(chunkX, chunkZ) {
+        const chunkKey = `${chunkX},${chunkZ}`;
+        
+        // Skip if chunk already exists
+        if (this.chunks[chunkKey]) {
             return;
         }
         
+        // Create chunk container
+        this.chunks[chunkKey] = {
+            blocks: {},
+            meshes: []
+        };
+        
+        // Generate terrain for this chunk
+        const worldX = chunkX * this.chunkSize;
+        const worldZ = chunkZ * this.chunkSize;
+        
+        // Create blocks for this chunk
+        for (let x = 0; x < this.chunkSize; x++) {
+            for (let z = 0; z < this.chunkSize; z++) {
+                const blockX = worldX + x;
+                const blockZ = worldZ + z;
+                
+                // Get height from terrain generator
+                const height = this.terrainGenerator.getHeightAt(blockX, blockZ);
+                
+                // Create surface block
+                this.createBlock(blockX, height, blockZ, chunkKey);
+                
+                // Add some blocks below the surface
+                for (let y = height - 1; y > height - 3; y--) {
+                    if (Math.random() > 0.3) { // 70% chance to create a block
+                        this.createBlock(blockX, y, blockZ, chunkKey);
+                    }
+                }
+            }
+        }
+        
+        // Optimize chunk by merging blocks
+        this.optimizeChunk(chunkKey);
+    }
+
+    optimizeChunk(chunkKey) {
+        // This is a simplified optimization
+        // In a real implementation, you would merge adjacent blocks with the same material
+        // For now, we'll just create a single merged mesh for the chunk
+        
+        const chunk = this.chunks[chunkKey];
+        const blockKeys = Object.keys(chunk.blocks);
+        
+        if (blockKeys.length === 0) {
+            return;
+        }
+        
+        // Create merged mesh
+        const mergedMesh = BABYLON.Mesh.MergeMeshes(
+            Object.values(chunk.blocks).map(block => block.mesh),
+            true,
+            true,
+            undefined,
+            false,
+            true
+        );
+        
+        if (mergedMesh) {
+            mergedMesh.name = `chunk_${chunkKey}`;
+            mergedMesh.checkCollisions = true;
+            chunk.meshes.push(mergedMesh);
+        }
+    }
+
+    unloadChunk(chunkKey) {
+        const chunk = this.chunks[chunkKey];
+        if (!chunk) return;
+        
+        // Dispose all meshes in the chunk
+        chunk.meshes.forEach(mesh => {
+            if (mesh) {
+                mesh.dispose();
+            }
+        });
+        
+        // Remove chunk from memory
+        delete this.chunks[chunkKey];
+    }
+
+    createBlock(x, y, z, chunkKey = null) {
+        // Create a unique key for this block position
+        const blockKey = `${x},${y},${z}`;
+        
+        // Check if block already exists at this position
+        if (this.blocks[blockKey]) {
+            return this.blocks[blockKey];
+        }
+        
         // Create block mesh
-        const block = BABYLON.MeshBuilder.CreateBox(`block_${key}`, { size: this.blockSize }, this.scene);
+        const block = BABYLON.MeshBuilder.CreateBox(`block_${blockKey}`, { size: this.blockSize }, this.scene);
         block.position = new BABYLON.Vector3(x, y, z);
         block.material = this.blockMaterial;
         block.checkCollisions = true;
         
         // Store block in blocks object
-        this.blocks[key] = block;
+        const blockData = {
+            mesh: block,
+            position: { x, y, z }
+        };
         
-        return block;
+        this.blocks[blockKey] = blockData;
+        
+        // If this block belongs to a chunk, add it to the chunk
+        if (chunkKey && this.chunks[chunkKey]) {
+            this.chunks[chunkKey].blocks[blockKey] = blockData;
+        }
+        
+        return blockData;
     }
 
     removeBlock(x, y, z) {
-        const key = `${x},${y},${z}`;
+        const blockKey = `${x},${y},${z}`;
         
-        if (this.blocks[key]) {
-            this.blocks[key].dispose();
-            delete this.blocks[key];
+        if (this.blocks[blockKey]) {
+            // Get the block's mesh
+            const block = this.blocks[blockKey];
+            
+            // Dispose the mesh
+            if (block.mesh) {
+                block.mesh.dispose();
+            }
+            
+            // Remove from blocks object
+            delete this.blocks[blockKey];
+            
+            // Find and remove from chunk if it exists
+            const chunkX = Math.floor(x / this.chunkSize);
+            const chunkZ = Math.floor(z / this.chunkSize);
+            const chunkKey = `${chunkX},${chunkZ}`;
+            
+            if (this.chunks[chunkKey] && this.chunks[chunkKey].blocks[blockKey]) {
+                delete this.chunks[chunkKey].blocks[blockKey];
+            }
+            
             return true;
         }
         
@@ -247,19 +467,28 @@ class Game {
         // Pointer lock change handler
         const pointerLockChange = () => {
             this.isPointerLocked = document.pointerLockElement === this.canvas;
+            
+            // If we lost pointer lock and not paused, pause the game
+            if (!this.isPointerLocked && !this.isPaused) {
+                this.togglePause();
+            }
         };
         
         document.addEventListener('pointerlockchange', pointerLockChange, false);
         
         // Click handler for canvas
         this.canvas.addEventListener('click', () => {
-            if (!this.isPointerLocked) {
+            if (!this.isPointerLocked && !this.isPaused) {
                 this.canvas.requestPointerLock();
             }
         });
         
         // Key down handler
         window.addEventListener('keydown', (event) => {
+            if (this.isPaused && event.code !== 'Escape') {
+                return; // Ignore most keypresses when paused
+            }
+            
             switch (event.code) {
                 case 'KeyW':
                     this.moveForward = true;
@@ -296,6 +525,10 @@ class Game {
                         this.removeBlock(x, y, z);
                     }
                     break;
+                case 'Escape':
+                    // Toggle pause menu
+                    this.togglePause();
+                    break;
             }
         });
         
@@ -322,12 +555,83 @@ class Game {
         
         // Register before render observer for player movement and block selection
         this.scene.registerBeforeRender(() => {
-            // Handle player movement
-            this.handlePlayerMovement();
-            
-            // Handle block selection
-            this.handleBlockSelection();
+            if (!this.isPaused) {
+                // Handle player movement
+                this.handlePlayerMovement();
+                
+                // Handle block selection
+                this.handleBlockSelection();
+            }
         });
+    }
+
+    togglePause() {
+        this.isPaused = !this.isPaused;
+        
+        if (this.isPaused) {
+            // Show pause menu
+            this.pauseMenu.isVisible = true;
+            
+            // Exit pointer lock
+            document.exitPointerLock();
+        } else {
+            // Hide pause menu
+            this.pauseMenu.isVisible = false;
+            
+            // Request pointer lock
+            this.canvas.requestPointerLock();
+        }
+    }
+
+    saveWorld() {
+        // In a real implementation, you would save the world state
+        // For now, we'll just show a notification
+        
+        const guiTexture = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI('NotificationUI');
+        
+        const notification = new BABYLON.GUI.TextBlock();
+        notification.text = "World Saved!";
+        notification.color = "white";
+        notification.fontSize = 24;
+        notification.outlineWidth = 1;
+        notification.outlineColor = "black";
+        
+        guiTexture.addControl(notification);
+        
+        // Remove notification after a delay
+        setTimeout(() => {
+            guiTexture.dispose();
+        }, 2000);
+    }
+
+    quitToMenu() {
+        // Save world state before quitting
+        this.saveWorld();
+        
+        // Reset game state
+        this.isPaused = false;
+        
+        // Show main menu
+        const mainMenu = document.getElementById('main-menu');
+        const gameCanvas = document.getElementById('game-canvas');
+        
+        mainMenu.classList.add('active');
+        gameCanvas.style.display = 'none';
+        
+        // Dispose game resources
+        this.dispose();
+    }
+
+    dispose() {
+        // Stop render loop
+        this.engine.stopRenderLoop();
+        
+        // Dispose scene
+        this.scene.dispose();
+        
+        // Reset game instance
+        gameInstance = null;
+        window.gameInstance = null;
     }
 
     handlePlayerMovement() {
@@ -424,9 +728,8 @@ class Game {
         this.camera.angularSensibility = 1000 / this.settings.mouseSensitivity;
         
         // Apply render distance
-        // This would require regenerating chunks which is complex
-        // For simplicity, we'll just update the property
         this.renderDistance = this.settings.renderDistance;
+        this.updateChunks(); // Update chunks based on new render distance
         
         // Apply fog setting
         if (this.settings.fog) {
@@ -443,5 +746,181 @@ class Game {
                 this.createFpsCounter();
             }
         } else if (this.fpsCounter) {
-            this.fpsCounter.dispose(
-(Content truncated due to size limit. Use line ranges to read in chunks)
+            this.fpsCounter.dispose();
+            this.fpsCounter = null;
+        }
+    }
+}
+
+// Terrain Generator class
+class TerrainGenerator {
+    constructor(seed, worldSize) {
+        this.seed = seed;
+        this.worldSize = worldSize;
+        this.noiseGenerator = new SimplexNoise(this.seed.toString());
+    }
+    
+    getHeightAt(x, z) {
+        // Generate height using simplex noise
+        const nx = x / this.worldSize;
+        const nz = z / this.worldSize;
+        
+        // Use multiple octaves of noise for more natural terrain
+        let height = 0;
+        let amplitude = 10;
+        let frequency = 1;
+        let persistence = 0.5;
+        
+        for (let i = 0; i < 4; i++) {
+            height += this.noiseGenerator.noise2D(nx * frequency, nz * frequency) * amplitude;
+            amplitude *= persistence;
+            frequency *= 2;
+        }
+        
+        return Math.floor(height);
+    }
+}
+
+// SimplexNoise implementation
+class SimplexNoise {
+    constructor(seed) {
+        this.p = new Uint8Array(256);
+        this.perm = new Uint8Array(512);
+        this.permMod12 = new Uint8Array(512);
+        
+        // Initialize the permutation table with values based on the seed
+        this.seed(seed);
+    }
+    
+    seed(seed) {
+        // Simple hash function
+        const hash = (s) => {
+            let h = 0;
+            for(let i = 0; i < s.length; i++) {
+                h = ((h << 5) - h) + s.charCodeAt(i);
+                h |= 0;
+            }
+            return h;
+        };
+        
+        // Initialize permutation table
+        for(let i = 0; i < 256; i++) {
+            this.p[i] = i;
+        }
+        
+        // Shuffle based on the seed
+        const seedValue = hash(seed);
+        for(let i = 255; i > 0; i--) {
+            const j = (seedValue + i) % (i + 1);
+            [this.p[i], this.p[j]] = [this.p[j], this.p[i]];
+        }
+        
+        // Extend permutation table
+        for(let i = 0; i < 512; i++) {
+            this.perm[i] = this.p[i & 255];
+            this.permMod12[i] = this.perm[i] % 12;
+        }
+    }
+    
+    // 2D simplex noise
+    noise2D(x, y) {
+        // Noise contributions from the three corners
+        let n0, n1, n2;
+        
+        // Skew the input space to determine which simplex cell we're in
+        const F2 = 0.5 * (Math.sqrt(3) - 1);
+        const s = (x + y) * F2;
+        const i = Math.floor(x + s);
+        const j = Math.floor(y + s);
+        
+        const G2 = (3 - Math.sqrt(3)) / 6;
+        const t = (i + j) * G2;
+        const X0 = i - t;
+        const Y0 = j - t;
+        const x0 = x - X0;
+        const y0 = y - Y0;
+        
+        // Determine which simplex we are in
+        let i1, j1;
+        if(x0 > y0) {
+            i1 = 1; j1 = 0;
+        } else {
+            i1 = 0; j1 = 1;
+        }
+        
+        // Offsets for corners
+        const x1 = x0 - i1 + G2;
+        const y1 = y0 - j1 + G2;
+        const x2 = x0 - 1 + 2 * G2;
+        const y2 = y0 - 1 + 2 * G2;
+        
+        // Work out the hashed gradient indices of the three simplex corners
+        const ii = i & 255;
+        const jj = j & 255;
+        const gi0 = this.permMod12[ii + this.perm[jj]];
+        const gi1 = this.permMod12[ii + i1 + this.perm[jj + j1]];
+        const gi2 = this.permMod12[ii + 1 + this.perm[jj + 1]];
+        
+        // Calculate the contribution from the three corners
+        let t0 = 0.5 - x0 * x0 - y0 * y0;
+        if(t0 < 0) {
+            n0 = 0;
+        } else {
+            t0 *= t0;
+            n0 = t0 * t0 * this.dot(this.grad3[gi0], x0, y0);
+        }
+        
+        let t1 = 0.5 - x1 * x1 - y1 * y1;
+        if(t1 < 0) {
+            n1 = 0;
+        } else {
+            t1 *= t1;
+            n1 = t1 * t1 * this.dot(this.grad3[gi1], x1, y1);
+        }
+        
+        let t2 = 0.5 - x2 * x2 - y2 * y2;
+        if(t2 < 0) {
+            n2 = 0;
+        } else {
+            t2 *= t2;
+            n2 = t2 * t2 * this.dot(this.grad3[gi2], x2, y2);
+        }
+        
+        // Add contributions from each corner to get the final noise value
+        // The result is scaled to return values in the interval [-1,1]
+        return 70 * (n0 + n1 + n2);
+    }
+    
+    // Dot product helper
+    dot(g, x, y) {
+        return g[0] * x + g[1] * y;
+    }
+    
+    // Gradient vectors for 2D
+    grad3 = [
+        [1, 1], [-1, 1], [1, -1], [-1, -1],
+        [1, 0], [-1, 0], [1, 0], [-1, 0],
+        [0, 1], [0, -1], [0, 1], [0, -1]
+    ];
+}
+
+// Initialize game when a world is loaded
+function initGame(worldData) {
+    // Get settings from storage
+    chrome.storage.local.get('settings', function(data) {
+        const settings = data.settings || {
+            vsync: false,
+            fpsCounter: false,
+            maxFramerate: 60,
+            renderDistance: 8,
+            fog: true,
+            mouseSensitivity: 5
+        };
+        
+        // Create game instance
+        gameInstance = new Game(worldData, settings);
+        
+        // Store game instance in window for access from menu.js
+        window.gameInstance = gameInstance;
+    });
+}
