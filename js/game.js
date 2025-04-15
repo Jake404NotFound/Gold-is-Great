@@ -49,8 +49,20 @@ class Game {
     }
 
     init() {
-        // Initialize Babylon.js engine
-        this.engine = new BABYLON.Engine(this.canvas, this.settings.vsync, { preserveDrawingBuffer: true, stencil: true });
+        console.log("[Game] Initializing...");
+        try {
+            console.log("[Game] Finding canvas element...");
+            this.canvas = document.getElementById('game-canvas');
+            console.log("[Game] Canvas element:", this.canvas);
+            if (!this.canvas) {
+                console.error("[Game] Canvas element 'game-canvas' not found!");
+                return; // Stop initialization if canvas is missing
+            }
+
+            console.log("[Game] Creating Babylon.js engine...");
+            // Initialize Babylon.js engine
+            this.engine = new BABYLON.Engine(this.canvas, this.settings.vsync, { preserveDrawingBuffer: true, stencil: true });
+            console.log("[Game] Engine created:", this.engine);
         
         // Set max framerate if not unlimited
         if (this.settings.maxFramerate > 0) {
@@ -58,15 +70,24 @@ class Game {
         }
         
         // Create scene
+        console.log("[Game] Creating scene...");
         this.createScene();
+        console.log("[Game] Scene created.");
         
         // Register event handlers
         this.registerEventHandlers();
         
         // Start the render loop
+        console.log("[Game] Starting render loop...");
         this.engine.runRenderLoop(() => {
+            // console.log("[Game] Render loop tick"); // Optional: Uncomment for very verbose logging
             if (!this.isPaused) {
-                this.scene.render();
+                try {
+                    this.scene.render();
+                } catch (renderError) {
+                    console.error("[Game] Error during scene.render():", renderError);
+                    this.engine.stopRenderLoop(); // Stop loop on error
+                }
                 
                 // Update FPS counter if enabled
                 if (this.settings.fpsCounter && this.fpsCounter) {
@@ -77,11 +98,18 @@ class Game {
                 this.updateChunks();
             }
         });
-        
+        console.log("[Game] Render loop started.");
+
         // Handle window resize
         window.addEventListener('resize', () => {
-            this.engine.resize();
+            if (this.engine) {
+                this.engine.resize();
+            }
         });
+        console.log("[Game] Initialization complete.");
+        } catch (initError) {
+            console.error("[Game] Error during initialization:", initError);
+        }
     }
 
     createScene() {
@@ -906,8 +934,11 @@ class SimplexNoise {
 
 // Initialize game when a world is loaded
 function initGame(worldData) {
+    console.log("[initGame] Function called with worldData:", worldData);
     // Get settings from storage
+    console.log("[initGame] Getting settings from chrome.storage...");
     chrome.storage.local.get('settings', function(data) {
+        console.log("[initGame] Settings received:", data);
         const settings = data.settings || {
             vsync: false,
             fpsCounter: false,
@@ -916,11 +947,19 @@ function initGame(worldData) {
             fog: true,
             mouseSensitivity: 5
         };
-        
+        console.log("[initGame] Using effective settings:", settings);
+
         // Create game instance
-        gameInstance = new Game(worldData, settings);
-        
-        // Store game instance in window for access from menu.js
-        window.gameInstance = gameInstance;
+        console.log("[initGame] Attempting to create Game instance...");
+        try {
+            gameInstance = new Game(worldData, settings);
+            console.log("[initGame] Game instance created successfully.");
+
+            // Store game instance in window for access from menu.js
+            window.gameInstance = gameInstance;
+            console.log("[initGame] Game instance assigned to window.");
+        } catch (creationError) {
+            console.error("[initGame] Error creating Game instance:", creationError);
+        }
     });
 }
