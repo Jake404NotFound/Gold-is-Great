@@ -1,5 +1,6 @@
 {
   "dependencies": {
-    "babylonjs": "^8.2.1"
+    "babylonjs": "^8.2.1",
+    "canvas": "^3.1.0"
   }
 }
